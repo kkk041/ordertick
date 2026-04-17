@@ -1,0 +1,83 @@
+{
+  "name": "ordertick",
+  "private": true,
+  "version": "0.0.0",
+  "description": "OrderTick 是一款面向接单场景的桌面计时与收入分析工具",
+  "author": "OrderTick",
+  "type": "module",
+  "main": "electron/main.cjs",
+  "scripts": {
+    "generate:icon": "powershell -NoProfile -Command \"Add-Type -AssemblyName System.Drawing; $img=[System.Drawing.Image]::FromFile('build/danta.jpg'); $img.Save('build/danta.png',[System.Drawing.Imaging.ImageFormat]::Png); $img.Dispose();\"; node scripts/generate-danta-icon.mjs",
+    "clean:release": "node scripts/clean-release.mjs",
+    "dev": "concurrently -k \"npm:dev:renderer\" \"npm:dev:electron\"",
+    "dev:renderer": "vite",
+    "dev:electron": "set DEV_SERVER_URL=http://localhost:5173&& wait-on http-get://localhost:5173 && electron .",
+    "start": "electron .",
+    "start:debug": "set OPEN_DEVTOOLS=1&& electron .",
+    "build:renderer": "vite build",
+    "build": "npm run generate:icon && npm run build:renderer && electron-builder && npm run clean:release",
+    "pack": "npm run generate:icon && npm run build:renderer && electron-builder --dir",
+    "lint": "eslint . --ext js,jsx --report-unused-disable-directives --max-warnings 0",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@ant-design/icons": "^6.1.1",
+    "antd": "^6.3.4",
+    "crypto-js": "^4.2.0",
+    "react": "^18.2.0",
+    "react-dom": "^18.2.0",
+    "react-router-dom": "^6.30.3",
+    "xlsx": "^0.18.5"
+  },
+  "devDependencies": {
+    "@types/react": "^18.2.55",
+    "@types/react-dom": "^18.2.19",
+    "@vitejs/plugin-react": "^4.2.1",
+    "concurrently": "^8.2.2",
+    "electron": "^31.7.7",
+    "electron-builder": "^24.13.3",
+    "eslint": "^8.56.0",
+    "eslint-plugin-react": "^7.33.2",
+    "eslint-plugin-react-hooks": "^4.6.0",
+    "eslint-plugin-react-refresh": "^0.4.5",
+    "png-to-ico": "^3.0.1",
+    "vite": "^5.1.0",
+    "wait-on": "^7.2.0"
+  },
+  "build": {
+    "appId": "com.ordertick.desktop",
+    "productName": "OrderTick",
+    "directories": {
+      "output": "release"
+    },
+    "extraResources": [
+      {
+        "from": "build/danta.ico",
+        "to": "danta.ico"
+      },
+      {
+        "from": "build/danta.png",
+        "to": "danta.png"
+      }
+    ],
+    "files": [
+      "dist/renderer/**",
+      "electron/**",
+      "package.json"
+    ],
+    "win": {
+      "icon": "build/danta.ico",
+      "signAndEditExecutable": false,
+      "target": [
+        "nsis"
+      ]
+    },
+    "nsis": {
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "include": "build/installer.nsh",
+      "installerIcon": "build/danta.ico",
+      "uninstallerIcon": "build/danta.ico"
+    }
+  }
+}

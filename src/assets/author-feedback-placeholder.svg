@@ -1,0 +1,12 @@
+<svg width="320" height="320" viewBox="0 0 320 320" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <rect width="320" height="320" rx="32" fill="#FFF7FB"/>
+  <rect x="24" y="24" width="272" height="272" rx="24" fill="#FFE8F3" stroke="#F6C8DE" stroke-width="4" stroke-dasharray="10 10"/>
+  <circle cx="160" cy="112" r="46" fill="#FF4FA3" fill-opacity="0.14"/>
+  <path d="M124 120C124 99.0132 141.013 82 162 82H164C184.987 82 202 99.0132 202 120C202 140.987 184.987 158 164 158H154L134 176V152.5C128.139 145.573 124 133.629 124 120Z" fill="#FF4FA3"/>
+  <circle cx="153" cy="119" r="5" fill="white"/>
+  <circle cx="174" cy="119" r="5" fill="white"/>
+  <path d="M74 220H246" stroke="#E8A6C5" stroke-width="6" stroke-linecap="round"/>
+  <path d="M94 244H226" stroke="#F0BED5" stroke-width="6" stroke-linecap="round"/>
+  <text x="160" y="216" text-anchor="middle" fill="#8F4168" font-size="20" font-family="Microsoft YaHei, sans-serif">作者微信二维码展示位</text>
+  <text x="160" y="272" text-anchor="middle" fill="#B67396" font-size="16" font-family="Microsoft YaHei, sans-serif">将真实二维码替换到这里即可</text>
+</svg>

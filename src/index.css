@@ -1,0 +1,802 @@
+:root {
+  font-family: 'IBM Plex Sans', 'Noto Sans SC', 'Microsoft YaHei', sans-serif;
+  line-height: 1.5;
+  font-weight: 400;
+  color: #0f172a;
+  --theme-primary: #1677ff;
+  --theme-primary-soft: #80b1ff;
+  --page-bg: #f8fafc;
+  --panel-bg: #ffffff;
+  --card-soft-bg: #f8fafc;
+  --panel-border: #e2e8f0;
+  --text-main: #0f172a;
+  --text-sub: #595959;
+  --text-muted: #8c8c8c;
+  --axis-line: #d0d7e2;
+  --grid-line: #e6edf7;
+  --chart-bg: linear-gradient(180deg, #eff6ff 0%, #ffffff 100%);
+  --sider-bg: #0f172a;
+  --logo-bg: rgba(255, 255, 255, 0.08);
+  --logo-text: #f8fafc;
+  --sider-toggle-color: #e2e8f0;
+  --sider-toggle-border: rgba(255, 255, 255, 0.16);
+  --sider-toggle-bg: rgba(255, 255, 255, 0.06);
+  --sider-toggle-color-hover: #ffffff;
+  --sider-toggle-border-hover: rgba(255, 255, 255, 0.28);
+  --sider-toggle-bg-hover: rgba(255, 255, 255, 0.12);
+  --hover-surface: #eef4ff;
+  --hover-surface-strong: #e1ecff;
+  --menu-ripple-center: rgba(255, 255, 255, 0.42);
+  --menu-ripple-mid: rgba(255, 255, 255, 0.2);
+  --modal-mask: rgba(15, 23, 42, 0.4);
+  --modal-shadow: 0 24px 64px rgba(15, 23, 42, 0.16);
+  --card-hover-shadow: 0 16px 32px rgba(15, 23, 42, 0.1);
+  --field-bg: #ffffff;
+  --field-border: #dbe3ef;
+  --table-header-bg: #f8fafc;
+  --table-row-hover: #eef4ff;
+  --page-glow-a: rgba(14, 165, 233, 0.25);
+  --page-glow-b: rgba(251, 191, 36, 0.24);
+  --scrollbar-track: rgba(148, 163, 184, 0.18);
+  --scrollbar-thumb: color-mix(in srgb, var(--theme-primary) 52%, #cbd5e1);
+  --scrollbar-thumb-hover: color-mix(
+    in srgb,
+    var(--theme-primary) 70%,
+    #94a3b8
+  );
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+:root[data-theme='girl'] {
+  color: #5c1841;
+  --page-bg: #fff6fb;
+  --panel-bg: rgba(255, 255, 255, 0.94);
+  --card-soft-bg: #fff0f7;
+  --panel-border: #f6c8de;
+  --text-main: #5c1841;
+  --text-sub: #8f4168;
+  --text-muted: #b67396;
+  --axis-line: #f0c5d8;
+  --grid-line: #f8dce8;
+  --chart-bg: linear-gradient(180deg, #ffe8f3 0%, #fffafc 100%);
+  --sider-bg: linear-gradient(180deg, #fff0f8 0%, #ffdbe9 100%);
+  --logo-bg: rgba(255, 255, 255, 0.72);
+  --logo-text: #74274f;
+  --sider-toggle-color: #8f4168;
+  --sider-toggle-border: rgba(244, 143, 177, 0.5);
+  --sider-toggle-bg: rgba(255, 255, 255, 0.78);
+  --sider-toggle-color-hover: #c2186a;
+  --sider-toggle-border-hover: rgba(255, 79, 163, 0.55);
+  --sider-toggle-bg-hover: rgba(255, 255, 255, 0.95);
+  --hover-surface: #ffe8f3;
+  --hover-surface-strong: #ffd6ea;
+  --menu-ripple-center: rgba(255, 79, 163, 0.36);
+  --menu-ripple-mid: rgba(255, 128, 185, 0.18);
+  --modal-mask: rgba(122, 28, 73, 0.26);
+  --modal-shadow: 0 28px 72px rgba(255, 79, 163, 0.18);
+  --card-hover-shadow: 0 20px 36px rgba(255, 79, 163, 0.16);
+  --field-bg: #fffafc;
+  --field-border: #f3bfd7;
+  --table-header-bg: #fff3f9;
+  --table-row-hover: #ffe8f3;
+  --page-glow-a: rgba(255, 79, 163, 0.18);
+  --page-glow-b: rgba(255, 190, 214, 0.3);
+  --scrollbar-track: rgba(255, 191, 220, 0.36);
+  --scrollbar-thumb: color-mix(in srgb, var(--theme-primary) 62%, #ffc6dd);
+  --scrollbar-thumb-hover: color-mix(
+    in srgb,
+    var(--theme-primary) 82%,
+    #ff9ac6
+  );
+}
+
+:root[data-theme='dark'] {
+  color: #e2e8f0;
+  --page-bg: #0b1220;
+  --panel-bg: #111b2e;
+  --card-soft-bg: #162235;
+  --panel-border: #223450;
+  --text-main: #e2e8f0;
+  --text-sub: #cbd5e1;
+  --text-muted: #94a3b8;
+  --axis-line: #324a69;
+  --grid-line: #223a58;
+  --chart-bg: linear-gradient(180deg, #152238 0%, #0f1b2e 100%);
+  --sider-bg: #08101f;
+  --logo-bg: rgba(148, 163, 184, 0.14);
+  --logo-text: #e2e8f0;
+  --sider-toggle-color: #cbd5e1;
+  --sider-toggle-border: rgba(148, 163, 184, 0.35);
+  --sider-toggle-bg: rgba(148, 163, 184, 0.1);
+  --sider-toggle-color-hover: #ffffff;
+  --sider-toggle-border-hover: rgba(148, 163, 184, 0.5);
+  --sider-toggle-bg-hover: rgba(148, 163, 184, 0.2);
+  --hover-surface: #1a2a43;
+  --hover-surface-strong: #243856;
+  --menu-ripple-center: rgba(148, 184, 255, 0.34);
+  --menu-ripple-mid: rgba(148, 184, 255, 0.16);
+  --modal-mask: rgba(3, 8, 18, 0.66);
+  --modal-shadow: 0 24px 64px rgba(2, 6, 23, 0.55);
+  --card-hover-shadow: 0 18px 36px rgba(2, 6, 23, 0.34);
+  --field-bg: #162235;
+  --field-border: #2d4365;
+  --table-header-bg: #1a2740;
+  --table-row-hover: #1a2a43;
+  --page-glow-a: rgba(37, 99, 235, 0.16);
+  --page-glow-b: rgba(245, 158, 11, 0.08);
+  --scrollbar-track: rgba(51, 65, 85, 0.45);
+  --scrollbar-thumb: color-mix(in srgb, var(--theme-primary) 58%, #334155);
+  --scrollbar-thumb-hover: color-mix(
+    in srgb,
+    var(--theme-primary) 76%,
+    #475569
+  );
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  min-width: 320px;
+  min-height: 100vh;
+  background:
+    radial-gradient(1000px 400px at 20% -20%, var(--page-glow-a), transparent),
+    radial-gradient(900px 360px at 100% 0%, var(--page-glow-b), transparent),
+    var(--page-bg);
+  color: var(--text-main);
+}
+
+.revenue-hero,
+.overview-hero,
+.analytics-hero,
+.history-hero,
+.settings-hero {
+  position: relative;
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  padding: 18px 18px 16px;
+  border: 1px solid var(--panel-border);
+  border-radius: 18px;
+  background:
+    radial-gradient(
+      circle at 100% 0%,
+      rgba(255, 255, 255, 0.36),
+      transparent 34%
+    ),
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--panel-bg) 94%, #ffffff) 0%,
+      var(--panel-bg) 100%
+    );
+  overflow: hidden;
+}
+
+.revenue-hero::before,
+.overview-hero::before,
+.analytics-hero::before,
+.history-hero::before,
+.settings-hero::before {
+  content: '';
+  position: absolute;
+  inset: auto -32px -54px auto;
+  width: 210px;
+  height: 210px;
+  border-radius: 50%;
+  background: radial-gradient(
+    circle,
+    color-mix(in srgb, var(--theme-primary) 18%, transparent) 0%,
+    transparent 70%
+  );
+  pointer-events: none;
+}
+
+.revenue-hero h2,
+.overview-hero h2,
+.analytics-hero h2,
+.history-hero h2,
+.settings-hero h2 {
+  margin-bottom: 4px;
+}
+
+.revenue-hero-badges,
+.overview-hero-badges,
+.analytics-hero-badges,
+.history-hero-badges,
+.settings-hero-badges {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 8px;
+  max-width: 48%;
+}
+
+.revenue-hero-badges span,
+.overview-hero-badges span,
+.analytics-hero-badges span,
+.history-hero-badges span,
+.settings-hero-badges span {
+  padding: 7px 12px;
+  border-radius: 999px;
+  font-size: 12px;
+  color: var(--text-sub);
+  background: color-mix(in srgb, var(--card-soft-bg) 92%, #ffffff);
+  border: 1px solid var(--panel-border);
+}
+
+:root[data-theme='girl'] .revenue-hero,
+:root[data-theme='girl'] .overview-hero,
+:root[data-theme='girl'] .analytics-hero,
+:root[data-theme='girl'] .history-hero,
+:root[data-theme='girl'] .settings-hero {
+  background:
+    radial-gradient(
+      circle at 100% 0%,
+      rgba(255, 208, 230, 0.62),
+      transparent 34%
+    ),
+    linear-gradient(
+      180deg,
+      rgba(255, 255, 255, 0.9) 0%,
+      rgba(255, 245, 250, 0.96) 100%
+    );
+}
+
+@media (max-width: 1180px) {
+  .revenue-hero,
+  .overview-hero,
+  .analytics-hero,
+  .history-hero,
+  .settings-hero {
+    flex-direction: column;
+  }
+
+  .revenue-hero-badges,
+  .overview-hero-badges,
+  .analytics-hero-badges,
+  .history-hero-badges,
+  .settings-hero-badges {
+    justify-content: flex-start;
+    max-width: none;
+  }
+}
+
+.ant-card,
+.ant-table-wrapper,
+.ant-statistic,
+.ant-descriptions,
+.ant-empty,
+.ant-modal-root .ant-modal-content {
+  color: var(--text-main);
+}
+
+.ant-table-content::-webkit-scrollbar,
+.ant-table-body::-webkit-scrollbar,
+.ant-table-container::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+.ant-table-content::-webkit-scrollbar-track,
+.ant-table-body::-webkit-scrollbar-track,
+.ant-table-container::-webkit-scrollbar-track {
+  background: color-mix(in srgb, var(--scrollbar-track) 92%, transparent);
+}
+
+.ant-table-content::-webkit-scrollbar-thumb,
+.ant-table-body::-webkit-scrollbar-thumb,
+.ant-table-container::-webkit-scrollbar-thumb {
+  background: linear-gradient(
+    180deg,
+    color-mix(in srgb, var(--scrollbar-thumb) 80%, #ffffff) 0%,
+    var(--theme-primary) 100%
+  );
+}
+
+*::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+*::-webkit-scrollbar-track {
+  background: var(--scrollbar-track);
+  border-radius: 999px;
+}
+
+*::-webkit-scrollbar-thumb {
+  background: linear-gradient(
+    180deg,
+    var(--scrollbar-thumb) 0%,
+    var(--theme-primary) 100%
+  );
+  border-radius: 999px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: linear-gradient(
+    180deg,
+    var(--scrollbar-thumb-hover) 0%,
+    var(--theme-primary) 100%
+  );
+}
+
+*::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+.ant-modal-root .ant-modal-mask {
+  background: var(--modal-mask) !important;
+  -webkit-backdrop-filter: blur(12px);
+  backdrop-filter: blur(12px);
+}
+
+.ant-modal-root .ant-modal-content {
+  background: var(--panel-bg) !important;
+  border: 1px solid var(--panel-border);
+  box-shadow: var(--modal-shadow) !important;
+}
+
+.ant-modal-root .ant-modal-header {
+  background: transparent !important;
+  border-bottom: 1px solid var(--panel-border);
+}
+
+.ant-modal-root .ant-modal-title,
+.ant-modal-root .ant-modal-close,
+.ant-modal-root .ant-modal-body,
+.ant-modal-root .ant-form-item-label > label,
+.ant-modal-root .ant-picker,
+.ant-modal-root .ant-input,
+.ant-modal-root .ant-input-number,
+.ant-modal-root .ant-select-selector {
+  color: var(--text-main) !important;
+}
+
+.ant-modal-root .ant-modal-close:hover {
+  background: var(--hover-surface) !important;
+}
+
+.ant-modal-root .ant-modal-footer {
+  border-top: 1px solid var(--panel-border);
+}
+
+:root[data-theme='girl'] .ant-modal-root .ant-modal-content {
+  border-radius: 24px;
+}
+
+:root[data-theme='girl'] .ant-menu-dark,
+:root[data-theme='girl'] .ant-menu-dark .ant-menu-sub,
+:root[data-theme='girl'] .ant-layout-sider {
+  background: transparent !important;
+}
+
+:root[data-theme='girl'] .ant-menu-dark .ant-menu-item,
+:root[data-theme='girl'] .ant-menu-dark .ant-menu-submenu-title,
+:root[data-theme='girl'] .ant-menu-dark .ant-menu-item-icon,
+:root[data-theme='girl'] .ant-menu-dark .ant-menu-title-content,
+:root[data-theme='girl'] .ant-menu-dark .ant-menu-submenu-arrow {
+  color: var(--text-sub) !important;
+}
+
+:root[data-theme='girl'] .ant-menu-dark .ant-menu-item-selected {
+  background: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--theme-primary) 22%, #ffffff) 0%,
+    color-mix(in srgb, var(--theme-primary) 54%, #ffffff) 100%
+  ) !important;
+  color: #ffffff !important;
+}
+
+:root[data-theme='girl']
+  .ant-menu-dark
+  .ant-menu-item-selected
+  .ant-menu-item-icon,
+:root[data-theme='girl']
+  .ant-menu-dark
+  .ant-menu-item-selected
+  .ant-menu-title-content {
+  color: #ffffff !important;
+}
+
+:root[data-theme='girl'] .ant-menu-dark .ant-menu-item:hover,
+:root[data-theme='girl'] .ant-menu-dark .ant-menu-submenu-title:hover,
+:root[data-theme='girl'] .ant-menu-dark .ant-menu-sub .ant-menu-item:hover {
+  background: var(--hover-surface) !important;
+  color: var(--text-main) !important;
+}
+
+:root[data-theme='girl'] .ant-card,
+:root[data-theme='girl'] .ant-card .ant-card-head,
+:root[data-theme='girl'] .ant-card .ant-card-body,
+:root[data-theme='girl'] .ant-statistic,
+:root[data-theme='girl'] .ant-typography,
+:root[data-theme='girl'] .ant-empty-description {
+  color: var(--text-main) !important;
+}
+
+:root[data-theme='girl'] .ant-typography.ant-typography-secondary,
+:root[data-theme='girl'] .ant-statistic-title,
+:root[data-theme='girl'] .ant-form-item-label > label,
+:root[data-theme='girl'] .ant-input::placeholder,
+:root[data-theme='girl'] .ant-input-number input::placeholder,
+:root[data-theme='girl'] .ant-select-selection-placeholder,
+:root[data-theme='girl'] .ant-picker-input > input::placeholder {
+  color: var(--text-muted) !important;
+}
+
+:root[data-theme='girl'] .ant-btn-default,
+:root[data-theme='girl'] .ant-input,
+:root[data-theme='girl'] .ant-input-affix-wrapper,
+:root[data-theme='girl'] .ant-picker,
+:root[data-theme='girl'] .ant-select-selector,
+:root[data-theme='girl'] .ant-input-number,
+:root[data-theme='girl'] .ant-input-group-addon,
+:root[data-theme='girl'] .ant-pagination .ant-pagination-item,
+:root[data-theme='girl'] .ant-pagination .ant-pagination-prev,
+:root[data-theme='girl'] .ant-pagination .ant-pagination-next,
+:root[data-theme='girl'] .ant-pagination .ant-pagination-jump-prev,
+:root[data-theme='girl'] .ant-pagination .ant-pagination-jump-next {
+  background: var(--field-bg) !important;
+  border-color: var(--field-border) !important;
+  color: var(--text-main) !important;
+}
+
+:root[data-theme='girl'] .ant-btn-default:not(:disabled):hover,
+:root[data-theme='girl'] .ant-btn-default:not(:disabled):focus,
+:root[data-theme='girl'] .ant-btn-text:not(:disabled):hover,
+:root[data-theme='girl'] .ant-btn-link:not(:disabled):hover,
+:root[data-theme='girl'] .ant-input:hover,
+:root[data-theme='girl'] .ant-input-affix-wrapper:hover,
+:root[data-theme='girl'] .ant-picker:hover,
+:root[data-theme='girl'] .ant-input-number:hover,
+:root[data-theme='girl']
+  .ant-select:not(.ant-select-disabled):hover
+  .ant-select-selector,
+:root[data-theme='girl'] .ant-pagination .ant-pagination-item:hover,
+:root[data-theme='girl'] .ant-pagination .ant-pagination-prev:hover,
+:root[data-theme='girl'] .ant-pagination .ant-pagination-next:hover {
+  background: var(--hover-surface) !important;
+  border-color: var(--theme-primary-soft) !important;
+  color: var(--text-main) !important;
+}
+
+:root[data-theme='girl'] .ant-table-wrapper .ant-table,
+:root[data-theme='girl'] .ant-table-wrapper .ant-table-container,
+:root[data-theme='girl'] .ant-table-wrapper .ant-table-content,
+:root[data-theme='girl'] .ant-table-wrapper .ant-table-body {
+  background: transparent;
+}
+
+:root[data-theme='girl'] .ant-table-wrapper .ant-table-thead > tr > th,
+:root[data-theme='girl'] .ant-table-wrapper .ant-table-thead th {
+  background: var(--table-header-bg) !important;
+  color: var(--text-sub) !important;
+  border-bottom: 1px solid var(--panel-border) !important;
+}
+
+:root[data-theme='girl']
+  .ant-table-wrapper
+  .ant-table-thead
+  > tr
+  > th:not(:last-child)::before {
+  background-color: var(--panel-border) !important;
+}
+
+:root[data-theme='girl'] .ant-table-wrapper .ant-table-tbody > tr > td {
+  background: transparent !important;
+  color: var(--text-main) !important;
+  border-bottom: 1px solid var(--panel-border) !important;
+}
+
+:root[data-theme='girl'] .ant-table-wrapper .ant-table-tbody > tr:hover > td,
+:root[data-theme='girl']
+  .ant-table-wrapper
+  .ant-table-tbody
+  > tr.ant-table-row:hover
+  > td {
+  background: var(--table-row-hover) !important;
+}
+
+:root[data-theme='girl'] .ant-table-wrapper .ant-table-row-selected > td {
+  background: color-mix(in srgb, var(--theme-primary) 12%, #ffffff) !important;
+}
+
+:root[data-theme='girl'] .ant-pagination .ant-pagination-item a,
+:root[data-theme='girl'] .ant-pagination .ant-pagination-item-link,
+:root[data-theme='girl'] .ant-pagination .ant-pagination-item-link .anticon,
+:root[data-theme='girl'] .ant-pagination .ant-pagination-jump-prev,
+:root[data-theme='girl'] .ant-pagination .ant-pagination-jump-next,
+:root[data-theme='girl'] .ant-pagination .ant-pagination-options,
+:root[data-theme='girl'] .ant-pagination .ant-pagination-options-quick-jumper {
+  color: var(--text-sub) !important;
+}
+
+:root[data-theme='girl'] .ant-pagination .ant-pagination-item-active {
+  background: var(--theme-primary) !important;
+  border-color: var(--theme-primary) !important;
+}
+
+:root[data-theme='girl'] .ant-pagination .ant-pagination-item-active a,
+:root[data-theme='girl'] .ant-pagination .ant-pagination-item-active .anticon {
+  color: #ffffff !important;
+}
+
+:root[data-theme='girl'] .ant-pagination .ant-pagination-disabled,
+:root[data-theme='girl']
+  .ant-pagination
+  .ant-pagination-disabled
+  .ant-pagination-item-link {
+  color: var(--text-muted) !important;
+  background: color-mix(in srgb, var(--field-bg) 85%, #ffffff) !important;
+  border-color: var(--field-border) !important;
+}
+
+:root[data-theme='girl']
+  .ant-pagination
+  .ant-pagination-options-quick-jumper
+  input,
+:root[data-theme='girl'] .ant-select-dropdown,
+:root[data-theme='girl'] .ant-dropdown .ant-dropdown-menu,
+:root[data-theme='girl'] .ant-picker-dropdown .ant-picker-panel-container {
+  background: var(--panel-bg) !important;
+  border-color: var(--panel-border) !important;
+  color: var(--text-main) !important;
+}
+
+:root[data-theme='girl']
+  .ant-select-dropdown
+  .ant-select-item-option-active:not(.ant-select-item-option-disabled),
+:root[data-theme='girl']
+  .ant-dropdown
+  .ant-dropdown-menu
+  .ant-dropdown-menu-item:hover,
+:root[data-theme='girl']
+  .ant-picker-cell-in-view.ant-picker-cell-today
+  .ant-picker-cell-inner::before {
+  background: var(--hover-surface) !important;
+}
+
+:root[data-theme='girl']
+  .ant-picker-cell-in-view.ant-picker-cell-selected
+  .ant-picker-cell-inner,
+:root[data-theme='girl']
+  .ant-picker-cell-in-view.ant-picker-cell-range-start
+  .ant-picker-cell-inner,
+:root[data-theme='girl']
+  .ant-picker-cell-in-view.ant-picker-cell-range-end
+  .ant-picker-cell-inner {
+  background: var(--theme-primary) !important;
+}
+
+:root[data-theme='dark'] .ant-btn-default {
+  background: #162235;
+  border-color: #2d4365;
+  color: var(--text-main);
+}
+
+:root[data-theme='dark'] .ant-btn-default:not(:disabled):hover,
+:root[data-theme='dark'] .ant-btn-default:not(:disabled):focus {
+  background: var(--hover-surface-strong);
+  border-color: var(--theme-primary-soft);
+  color: var(--text-main);
+}
+
+:root[data-theme='dark'] .ant-btn-text:not(:disabled):hover,
+:root[data-theme='dark'] .ant-btn-link:not(:disabled):hover {
+  background: var(--hover-surface);
+  color: var(--text-main);
+}
+
+:root[data-theme='dark'] .ant-typography,
+:root[data-theme='dark'] .ant-statistic-content,
+:root[data-theme='dark'] .ant-card,
+:root[data-theme='dark'] .ant-table,
+:root[data-theme='dark'] .ant-modal {
+  color: var(--text-main);
+}
+
+:root[data-theme='dark'] .ant-typography.ant-typography-secondary,
+:root[data-theme='dark'] .ant-statistic-title,
+:root[data-theme='dark'] .ant-form-item-label > label,
+:root[data-theme='dark'] .ant-table-thead > tr > th,
+:root[data-theme='dark'] .ant-empty-description {
+  color: var(--text-sub) !important;
+}
+
+:root[data-theme='dark'] .ant-input,
+:root[data-theme='dark'] .ant-input-affix-wrapper,
+:root[data-theme='dark'] .ant-picker,
+:root[data-theme='dark'] .ant-select-selector,
+:root[data-theme='dark'] .ant-input-number {
+  background: #162235;
+  border-color: #2d4365;
+  color: var(--text-main);
+}
+
+:root[data-theme='dark'] .ant-input::placeholder,
+:root[data-theme='dark'] .ant-input-number input::placeholder,
+:root[data-theme='dark'] .ant-select-selection-placeholder,
+:root[data-theme='dark'] .ant-picker-input > input::placeholder {
+  color: var(--text-muted) !important;
+}
+
+:root[data-theme='dark'] .ant-input:hover,
+:root[data-theme='dark'] .ant-input-affix-wrapper:hover,
+:root[data-theme='dark'] .ant-picker:hover,
+:root[data-theme='dark']
+  .ant-select:not(.ant-select-disabled):hover
+  .ant-select-selector,
+:root[data-theme='dark'] .ant-input-number:hover {
+  border-color: var(--theme-primary-soft);
+}
+
+:root[data-theme='dark'] .ant-table-tbody > tr.ant-table-row:hover > td {
+  background: var(--hover-surface);
+}
+
+:root[data-theme='dark'] .ant-table-tbody > tr > td {
+  color: var(--text-main);
+}
+
+:root[data-theme='dark'] .ant-table-wrapper .ant-table,
+:root[data-theme='dark'] .ant-table-wrapper .ant-table-container,
+:root[data-theme='dark'] .ant-table-wrapper .ant-table-content {
+  background: var(--panel-bg);
+}
+
+:root[data-theme='dark'] .ant-table-wrapper .ant-table-thead > tr > th {
+  background: var(--card-soft-bg) !important;
+  color: var(--text-sub) !important;
+  border-bottom: 1px solid var(--panel-border) !important;
+}
+
+:root[data-theme='dark']
+  .ant-table-wrapper
+  .ant-table-thead
+  > tr
+  > th.ant-table-cell,
+:root[data-theme='dark'] .ant-table-wrapper .ant-table-thead th {
+  background: var(--card-soft-bg) !important;
+  color: var(--text-sub) !important;
+}
+
+:root[data-theme='dark']
+  .ant-table-wrapper
+  .ant-table-thead
+  > tr
+  > th:not(:last-child)::before {
+  background-color: var(--panel-border) !important;
+}
+
+:root[data-theme='dark'] .ant-table-wrapper .ant-table-tbody > tr > td {
+  background: transparent;
+  border-bottom: 1px solid var(--panel-border) !important;
+}
+
+:root[data-theme='dark'] .ant-table-wrapper .ant-table-tbody > tr:hover > td,
+:root[data-theme='dark']
+  .ant-table-wrapper
+  .ant-table-tbody
+  > tr.ant-table-row:hover
+  > td {
+  background: var(--hover-surface) !important;
+}
+
+:root[data-theme='dark'] .ant-table-wrapper .ant-table-row-selected > td {
+  background: var(--hover-surface-strong) !important;
+}
+
+:root[data-theme='dark'] .ant-pagination .ant-pagination-item,
+:root[data-theme='dark'] .ant-pagination .ant-pagination-prev,
+:root[data-theme='dark'] .ant-pagination .ant-pagination-next,
+:root[data-theme='dark'] .ant-pagination .ant-pagination-jump-prev,
+:root[data-theme='dark'] .ant-pagination .ant-pagination-jump-next {
+  background: #162235;
+  border-color: #2d4365;
+}
+
+:root[data-theme='dark'] .ant-pagination .ant-pagination-item a,
+:root[data-theme='dark'] .ant-pagination .ant-pagination-item-link,
+:root[data-theme='dark'] .ant-pagination .ant-pagination-jump-prev,
+:root[data-theme='dark'] .ant-pagination .ant-pagination-jump-next {
+  color: var(--text-sub) !important;
+}
+
+:root[data-theme='dark'] .ant-pagination .ant-pagination-item-link-icon,
+:root[data-theme='dark'] .ant-pagination .ant-pagination-item-ellipsis,
+:root[data-theme='dark'] .ant-pagination .anticon {
+  color: var(--text-sub) !important;
+}
+
+:root[data-theme='dark'] .ant-pagination .ant-pagination-item:hover,
+:root[data-theme='dark'] .ant-pagination .ant-pagination-prev:hover,
+:root[data-theme='dark'] .ant-pagination .ant-pagination-next:hover {
+  background: var(--hover-surface-strong);
+  border-color: var(--theme-primary-soft);
+}
+
+:root[data-theme='dark'] .ant-pagination .ant-pagination-item:hover a,
+:root[data-theme='dark']
+  .ant-pagination
+  .ant-pagination-prev:hover
+  .ant-pagination-item-link,
+:root[data-theme='dark']
+  .ant-pagination
+  .ant-pagination-next:hover
+  .ant-pagination-item-link {
+  color: var(--text-main) !important;
+}
+
+:root[data-theme='dark'] .ant-pagination .ant-pagination-item-active {
+  background: var(--theme-primary);
+  border-color: var(--theme-primary);
+}
+
+:root[data-theme='dark'] .ant-pagination .ant-pagination-item-active a {
+  color: #ffffff !important;
+}
+
+:root[data-theme='dark'] .ant-pagination .ant-pagination-item-active .anticon,
+:root[data-theme='dark']
+  .ant-pagination
+  .ant-pagination-item-active
+  .ant-pagination-item-link {
+  color: #ffffff !important;
+}
+
+:root[data-theme='dark'] .ant-pagination .ant-pagination-disabled,
+:root[data-theme='dark']
+  .ant-pagination
+  .ant-pagination-disabled
+  .ant-pagination-item-link {
+  color: var(--text-muted) !important;
+  border-color: var(--panel-border) !important;
+  background: var(--card-soft-bg) !important;
+}
+
+:root[data-theme='dark'] .ant-pagination .ant-pagination-options,
+:root[data-theme='dark'] .ant-pagination .ant-pagination-options-quick-jumper {
+  color: var(--text-sub) !important;
+}
+
+:root[data-theme='dark']
+  .ant-pagination
+  .ant-pagination-options-quick-jumper
+  input {
+  background: #162235;
+  border-color: #2d4365;
+  color: var(--text-main);
+}
+
+:root[data-theme='dark']
+  .ant-pagination
+  .ant-pagination-options-quick-jumper
+  input::placeholder {
+  color: var(--text-muted);
+}
+
+:root[data-theme='dark']
+  .ant-dropdown
+  .ant-dropdown-menu
+  .ant-dropdown-menu-item:hover,
+:root[data-theme='dark']
+  .ant-select-dropdown
+  .ant-select-item-option-active:not(.ant-select-item-option-disabled) {
+  background: var(--hover-surface);
+  color: var(--text-main);
+}
+
+:root[data-theme='dark'] .ant-menu-dark .ant-menu-item:hover,
+:root[data-theme='dark'] .ant-menu-dark .ant-menu-submenu-title:hover,
+:root[data-theme='dark'] .ant-menu-dark .ant-menu-sub .ant-menu-item:hover {
+  background: var(--hover-surface) !important;
+  color: var(--text-main) !important;
+}

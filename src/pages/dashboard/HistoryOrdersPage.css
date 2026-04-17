@@ -1,0 +1,286 @@
+.history-page .ant-card {
+  border: 1px solid var(--panel-border);
+  animation: history-card-enter 0.45s ease both;
+}
+
+.history-page h2 {
+  margin-bottom: 2px;
+}
+
+.history-page > .ant-space > * {
+  opacity: 0;
+  animation: history-block-in 0.44s ease-out both;
+}
+
+.history-page > .ant-space > *:nth-child(1) {
+  animation-delay: 0.02s;
+}
+
+.history-page > .ant-space > *:nth-child(2) {
+  animation-delay: 0.08s;
+}
+
+.history-page > .ant-space > *:nth-child(3) {
+  animation-delay: 0.14s;
+}
+
+.history-toolbar-card .ant-card-body {
+  padding-top: 12px;
+  padding-bottom: 12px;
+  background:
+    radial-gradient(
+      circle at 100% 0%,
+      color-mix(in srgb, var(--theme-primary) 10%, transparent) 0%,
+      transparent 36%
+    ),
+    linear-gradient(
+      180deg,
+      color-mix(in srgb, var(--card-soft-bg) 90%, #ffffff) 0%,
+      var(--panel-bg) 100%
+    );
+}
+
+.history-table-card .ant-card-body {
+  background: color-mix(in srgb, var(--panel-bg) 97%, #ffffff);
+}
+
+.history-start-time-text {
+  display: inline-block;
+}
+
+.history-status-leading-icon {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: inherit;
+}
+
+.history-status-leading-icon .anticon {
+  font-size: 12px;
+  color: rgba(100, 116, 139, 0.9);
+}
+
+.history-muted-text {
+  color: var(--text-muted);
+}
+
+.history-order-status-pill {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 52px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 1.4;
+  border: 1px solid transparent;
+  white-space: nowrap;
+}
+
+.history-order-status-pill.is-normal {
+  color: #2563eb;
+  background: rgba(59, 130, 246, 0.1);
+  border-color: rgba(59, 130, 246, 0.16);
+}
+
+.history-order-status-pill.is-muted {
+  color: #5b6b80;
+  background: rgba(148, 163, 184, 0.18);
+  border-color: rgba(148, 163, 184, 0.22);
+}
+
+.history-order-row-muted > td {
+  color: #66768a !important;
+  background: linear-gradient(
+    180deg,
+    rgba(238, 243, 249, 0.98) 0%,
+    rgba(228, 236, 245, 1) 100%
+  ) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.55);
+}
+
+.history-order-row-muted:hover > td {
+  background: linear-gradient(
+    180deg,
+    rgba(232, 239, 247, 1) 0%,
+    rgba(222, 231, 241, 1) 100%
+  ) !important;
+}
+
+.history-order-row-muted > td:first-child {
+  position: relative;
+  padding-left: 26px !important;
+}
+
+.history-order-row-muted > td:first-child::before {
+  content: '';
+  position: absolute;
+  left: 8px;
+  top: 6px;
+  bottom: 6px;
+  width: 6px;
+  border-radius: 999px;
+  background: linear-gradient(
+    180deg,
+    rgba(148, 163, 184, 1) 0%,
+    rgba(100, 116, 139, 1) 100%
+  );
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.34),
+    0 4px 10px rgba(100, 116, 139, 0.18);
+}
+
+.history-order-row-muted > td:first-child::after {
+  content: '';
+  position: absolute;
+  left: 17px;
+  top: 50%;
+  width: 6px;
+  height: 6px;
+  margin-top: -3px;
+  border-radius: 50%;
+  background: rgba(100, 116, 139, 0.72);
+}
+
+.history-toolbar {
+  width: 100%;
+}
+
+.history-page .ant-card:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--card-hover-shadow);
+  transition:
+    transform 0.25s ease,
+    box-shadow 0.25s ease;
+}
+
+:root[data-theme='girl'] .history-toolbar-card .ant-card-body {
+  background:
+    radial-gradient(
+      circle at 100% 0%,
+      rgba(255, 196, 222, 0.38) 0%,
+      transparent 36%
+    ),
+    linear-gradient(
+      180deg,
+      rgba(255, 255, 255, 0.88) 0%,
+      rgba(255, 247, 251, 0.96) 100%
+    );
+}
+
+:root[data-theme='girl'] .history-status-leading-icon .anticon {
+  color: rgba(179, 83, 131, 0.88);
+}
+
+:root[data-theme='girl'] .history-order-status-pill.is-normal {
+  color: #c13f7e;
+  background: rgba(255, 127, 168, 0.12);
+  border-color: rgba(255, 127, 168, 0.2);
+}
+
+:root[data-theme='girl'] .history-order-status-pill.is-muted {
+  color: #9e4d73;
+  background: rgba(232, 155, 189, 0.18);
+  border-color: rgba(232, 155, 189, 0.24);
+}
+
+:root[data-theme='girl'] .history-order-row-muted > td {
+  color: #9e4d73 !important;
+  background: linear-gradient(
+    180deg,
+    rgba(255, 241, 248, 0.99) 0%,
+    rgba(255, 228, 240, 1) 100%
+  ) !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.68);
+}
+
+:root[data-theme='girl'] .history-order-row-muted:hover > td {
+  background: linear-gradient(
+    180deg,
+    rgba(255, 236, 246, 1) 0%,
+    rgba(255, 223, 237, 1) 100%
+  ) !important;
+}
+
+:root[data-theme='girl'] .history-order-row-muted > td:first-child::before {
+  background: linear-gradient(
+    180deg,
+    rgba(236, 145, 188, 1) 0%,
+    rgba(179, 83, 131, 0.96) 100%
+  );
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.46);
+}
+
+:root[data-theme='girl'] .history-order-row-muted > td:first-child::after {
+  background: rgba(179, 83, 131, 0.72);
+}
+
+:root[data-theme='dark'] .history-status-leading-icon .anticon {
+  color: rgba(165, 180, 205, 0.92);
+}
+
+:root[data-theme='dark'] .history-order-status-pill.is-normal {
+  color: #93c5fd;
+  background: rgba(59, 130, 246, 0.18);
+  border-color: rgba(96, 165, 250, 0.22);
+}
+
+:root[data-theme='dark'] .history-order-status-pill.is-muted {
+  color: #d1d9e6;
+  background: rgba(100, 116, 139, 0.28);
+  border-color: rgba(148, 163, 184, 0.24);
+}
+
+:root[data-theme='dark'] .history-order-row-muted > td {
+  background: linear-gradient(
+    180deg,
+    rgba(36, 49, 67, 0.96) 0%,
+    rgba(22, 31, 50, 1) 100%
+  ) !important;
+  color: #a4b2c5 !important;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.04);
+}
+
+:root[data-theme='dark'] .history-order-row-muted:hover > td {
+  background: linear-gradient(
+    180deg,
+    rgba(43, 58, 79, 1) 0%,
+    rgba(27, 38, 60, 1) 100%
+  ) !important;
+}
+
+:root[data-theme='dark'] .history-order-row-muted > td:first-child::before {
+  background: linear-gradient(
+    180deg,
+    rgba(165, 180, 205, 1) 0%,
+    rgba(86, 103, 128, 0.96) 100%
+  );
+  box-shadow: 0 0 0 1px rgba(15, 23, 42, 0.42);
+}
+
+:root[data-theme='dark'] .history-order-row-muted > td:first-child::after {
+  background: rgba(165, 180, 205, 0.76);
+}
+
+@keyframes history-card-enter {
+  from {
+    opacity: 0;
+    transform: translateY(7px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes history-block-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}

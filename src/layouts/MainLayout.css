@@ -1,0 +1,519 @@
+.app-layout {
+  min-height: 100vh;
+  background: var(--page-bg);
+  position: relative;
+  overflow: hidden;
+}
+
+.app-layout::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(
+      circle at 0% 12%,
+      color-mix(in srgb, var(--theme-primary) 8%, transparent) 0%,
+      transparent 22%
+    ),
+    radial-gradient(
+      circle at 100% 20%,
+      color-mix(in srgb, var(--theme-primary) 7%, transparent) 0%,
+      transparent 24%
+    );
+  animation: app-layout-aurora 18s ease-in-out infinite alternate;
+}
+
+.window-drag-region {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  height: 40px;
+  z-index: 6;
+  -webkit-app-region: drag;
+}
+
+.app-sider {
+  background: var(--sider-bg);
+  transition:
+    background 0.38s ease,
+    box-shadow 0.38s ease,
+    transform 0.38s ease;
+  box-shadow: 16px 0 32px rgba(2, 6, 23, 0.16);
+}
+
+.app-sider.ant-layout-sider,
+.app-sider.ant-layout-sider-collapsed {
+  transition: all 0.38s cubic-bezier(0.22, 0.61, 0.36, 1) !important;
+}
+
+.app-layout.is-sider-collapsed .app-sider.ant-layout-sider,
+.app-layout.is-sider-collapsed .app-sider.ant-layout-sider-collapsed {
+  transition-duration: 0.58s !important;
+}
+
+.app-sider::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: linear-gradient(
+    180deg,
+    rgba(255, 255, 255, 0.05) 0%,
+    transparent 20%,
+    transparent 78%,
+    rgba(255, 255, 255, 0.03) 100%
+  );
+}
+
+.app-sider.ant-layout-sider-collapsed {
+  box-shadow: 10px 0 24px rgba(2, 6, 23, 0.12);
+}
+
+.logo {
+  height: 56px;
+  margin: 12px;
+  padding: 0 10px;
+  border-radius: 10px;
+  color: var(--logo-text);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 700;
+  background: var(--logo-bg);
+  overflow: hidden;
+  position: relative;
+  transition:
+    transform 0.34s ease,
+    box-shadow 0.34s ease,
+    background 0.34s ease;
+}
+
+.app-layout.is-sider-collapsed .logo {
+  transition-duration: 0.5s;
+}
+
+.logo::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    120deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.08) 36%,
+    rgba(255, 255, 255, 0.22) 50%,
+    transparent 68%
+  );
+  transform: translateX(-150%);
+  animation: route-sheen 9s ease-in-out infinite;
+  pointer-events: none;
+}
+
+.logo-image {
+  width: 28px;
+  height: 28px;
+  object-fit: contain;
+}
+
+.logo-text {
+  white-space: nowrap;
+  animation: sider-logo-text-in 0.52s cubic-bezier(0.22, 0.61, 0.36, 1) both;
+}
+
+.app-layout.is-sider-expanded .logo-text {
+  animation-duration: 0.42s;
+}
+
+.sider-toggle-wrap {
+  padding: 0 12px 12px;
+}
+
+.sider-toggle-btn {
+  width: 100%;
+  color: var(--sider-toggle-color) !important;
+  border: 1px solid var(--sider-toggle-border);
+  background: var(--sider-toggle-bg) !important;
+  -webkit-app-region: no-drag;
+  position: relative;
+  overflow: hidden;
+  transition:
+    transform 0.25s ease,
+    box-shadow 0.25s ease,
+    border-color 0.25s ease,
+    background 0.25s ease;
+}
+
+.sider-toggle-btn::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    120deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.08) 36%,
+    rgba(255, 255, 255, 0.22) 50%,
+    transparent 68%
+  );
+  transform: translateX(-150%);
+  animation: route-sheen 7.5s ease-in-out infinite;
+  pointer-events: none;
+}
+
+.sider-toggle-btn:hover {
+  color: var(--sider-toggle-color-hover) !important;
+  border-color: var(--sider-toggle-border-hover);
+  background: var(--sider-toggle-bg-hover) !important;
+  transform: translateY(-1px);
+  box-shadow: 0 10px 22px rgba(2, 6, 23, 0.14);
+}
+
+.menu-ripple {
+  position: relative;
+  overflow: hidden;
+}
+
+.menu-ripple::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 8px;
+  background: radial-gradient(
+    circle,
+    var(--menu-ripple-center) 0%,
+    var(--menu-ripple-mid) 35%,
+    transparent 72%
+  );
+  transform: scale(0.35);
+  opacity: 0;
+  pointer-events: none;
+  animation: menu-ripple-wave 0.52s ease-out both;
+}
+
+.theme-toggle-wrap {
+  position: absolute;
+  right: 168px;
+  top: 8px;
+  z-index: 10;
+  -webkit-app-region: no-drag;
+}
+
+.theme-toggle-btn {
+  height: 36px;
+  padding: 0 14px;
+  border-radius: 999px;
+  border: 1px solid var(--panel-border);
+  background: var(--panel-bg) !important;
+  color: var(--text-main);
+  box-shadow: 0 6px 18px rgba(2, 6, 23, 0.12);
+  position: relative;
+  overflow: hidden;
+  transition:
+    transform 0.25s ease,
+    box-shadow 0.25s ease,
+    border-color 0.25s ease;
+}
+
+.theme-toggle-btn::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    120deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.08) 36%,
+    rgba(255, 255, 255, 0.22) 50%,
+    transparent 68%
+  );
+  transform: translateX(-150%);
+  animation: route-sheen 6.8s ease-in-out infinite;
+  pointer-events: none;
+}
+
+.theme-toggle-btn:hover,
+.theme-toggle-btn:focus-visible {
+  color: var(--theme-primary) !important;
+  border-color: var(--theme-primary-soft);
+  background: var(--panel-bg) !important;
+  transform: translateY(-1px);
+  box-shadow: 0 12px 24px rgba(2, 6, 23, 0.16);
+}
+
+.theme-toggle-btn:focus {
+  outline: none;
+}
+
+.app-content {
+  padding: 16px;
+  background: var(--page-bg);
+  height: 100vh;
+  box-sizing: border-box;
+  overflow-x: hidden;
+  padding-top: 56px;
+}
+
+.app-sider .ant-layout-sider-trigger {
+  height: 40px;
+  line-height: 40px;
+  background: var(--sider-toggle-bg) !important;
+  color: var(--sider-toggle-color) !important;
+  border-top: 1px solid var(--sider-toggle-border);
+  -webkit-app-region: no-drag;
+  transition:
+    background 0.25s ease,
+    color 0.25s ease,
+    border-color 0.25s ease;
+}
+
+.app-sider .ant-layout-sider-trigger:hover {
+  background: var(--sider-toggle-bg-hover) !important;
+  color: var(--sider-toggle-color-hover) !important;
+  border-top-color: var(--sider-toggle-border-hover);
+}
+
+.route-switch-stage {
+  height: 100%;
+  min-height: 0;
+  animation: route-switch-in 0.38s cubic-bezier(0.22, 0.61, 0.36, 1) both;
+  transform-origin: 50% 0%;
+}
+
+.app-sider .ant-menu {
+  background: transparent;
+}
+
+.app-sider .ant-menu-item,
+.app-sider .ant-menu-submenu-title {
+  transition:
+    background 0.28s ease,
+    box-shadow 0.28s ease;
+}
+
+.app-layout.is-sider-collapsed .app-sider .ant-menu-item,
+.app-layout.is-sider-collapsed .app-sider .ant-menu-submenu-title {
+  transition-duration: 0.42s;
+}
+
+.app-sider .ant-menu-item:hover,
+.app-sider .ant-menu-submenu-title:hover {
+  box-shadow: inset 0 0 0 1px
+    color-mix(in srgb, var(--theme-primary) 10%, transparent);
+}
+
+.app-sider .ant-menu-dark .ant-menu-item-selected {
+  position: relative;
+  overflow: hidden;
+  box-shadow: 0 10px 24px
+    color-mix(in srgb, var(--theme-primary) 24%, transparent);
+}
+
+.app-sider .ant-menu-dark .ant-menu-item-selected::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    120deg,
+    transparent 0%,
+    rgba(255, 255, 255, 0.08) 36%,
+    rgba(255, 255, 255, 0.2) 50%,
+    transparent 68%
+  );
+  transform: translateX(-150%);
+  animation: route-sheen 5.8s ease-in-out infinite;
+  pointer-events: none;
+}
+
+.app-content section {
+  background: var(--panel-bg);
+  border: 1px solid var(--panel-border);
+  border-radius: 12px;
+  padding: 16px;
+  transition:
+    background 0.25s ease,
+    border-color 0.25s ease;
+  position: relative;
+  overflow: hidden;
+}
+
+.app-content section::before {
+  content: '';
+  position: absolute;
+  width: 280px;
+  height: 280px;
+  border-radius: 50%;
+  right: -120px;
+  top: -140px;
+  pointer-events: none;
+  background: radial-gradient(
+    circle,
+    rgba(22, 119, 255, 0.11) 0%,
+    rgba(22, 119, 255, 0) 70%
+  );
+}
+
+.app-content h2 {
+  margin-top: 0;
+}
+
+.close-app-modal .ant-modal-content {
+  border-radius: 14px;
+  border: 1px solid var(--panel-border);
+  background: var(--panel-bg);
+}
+
+.close-app-modal .ant-modal-header {
+  margin-bottom: 8px;
+  background: transparent;
+}
+
+.close-app-modal .ant-modal-title,
+.close-app-modal .ant-typography {
+  color: var(--text-main);
+}
+
+.close-app-actions {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+.close-app-btn {
+  height: 40px;
+  font-weight: 600;
+}
+
+.close-app-btn-tray {
+  background: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--theme-primary) 88%, #ffffff) 0%,
+    var(--theme-primary) 100%
+  );
+  border: none;
+}
+
+.close-app-btn-tray:hover,
+.close-app-btn-tray:focus {
+  background: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--theme-primary) 68%, #ffffff) 0%,
+    color-mix(in srgb, var(--theme-primary) 100%, #000000 8%) 100%
+  );
+}
+
+:root[data-theme='girl'] .theme-toggle-btn {
+  box-shadow: 0 12px 28px rgba(255, 79, 163, 0.16);
+}
+
+:root[data-theme='girl'] .app-sider .ant-layout-sider-trigger {
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.42);
+}
+
+:root[data-theme='girl'] .app-content section::before {
+  background: radial-gradient(
+    circle,
+    color-mix(in srgb, var(--theme-primary) 24%, #ffffff) 0%,
+    rgba(255, 79, 163, 0) 72%
+  );
+}
+
+:root[data-theme='girl'] .close-app-modal .ant-modal-content {
+  border-radius: 24px;
+}
+
+.close-app-btn-exit {
+  border-color: #ffccc7;
+  color: #cf1322;
+  background: #fff2f0;
+}
+
+.close-app-btn-exit:hover,
+.close-app-btn-exit:focus {
+  border-color: #ffa39e;
+  color: #a8071a;
+  background: #fff1f0;
+}
+
+:root[data-theme='dark'] .close-app-btn-exit {
+  border-color: #6d3642;
+  color: #ffb3b6;
+  background: #3a1f26;
+}
+
+:root[data-theme='dark'] .close-app-btn-exit:hover,
+:root[data-theme='dark'] .close-app-btn-exit:focus {
+  border-color: #875160;
+  color: #ffd3d5;
+  background: #4a2730;
+}
+
+@keyframes route-switch-in {
+  from {
+    opacity: 0;
+    transform: translateY(12px) scale(0.995);
+    filter: blur(1.2px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+    filter: blur(0);
+  }
+}
+
+@keyframes app-layout-aurora {
+  0% {
+    transform: translate3d(0, 0, 0) scale(1);
+    opacity: 0.72;
+  }
+  50% {
+    transform: translate3d(0, -8px, 0) scale(1.03);
+    opacity: 0.95;
+  }
+  100% {
+    transform: translate3d(0, 6px, 0) scale(0.99);
+    opacity: 0.8;
+  }
+}
+
+@keyframes route-sheen {
+  0%,
+  76%,
+  100% {
+    transform: translateX(-150%);
+  }
+  88% {
+    transform: translateX(150%);
+  }
+}
+
+@keyframes sider-logo-text-in {
+  from {
+    opacity: 0;
+    transform: translateX(-10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .route-switch-stage {
+    animation: none;
+  }
+
+  .app-content section::before {
+    display: none;
+  }
+}
+
+@keyframes menu-ripple-wave {
+  0% {
+    transform: scale(0.35);
+    opacity: 0.8;
+  }
+  100% {
+    transform: scale(1.4);
+    opacity: 0;
+  }
+}
