@@ -2,9 +2,13 @@ import { useEffect, useMemo, useState } from 'react'
 import {
   Button,
   Card,
+  DatePicker,
+  Form,
   Input,
+  InputNumber,
   Modal,
   Popconfirm,
+  Select,
   Space,
   Table,
   Tooltip,
@@ -13,19 +17,34 @@ import {
   message,
 } from 'antd'
 import {
+  CopyOutlined,
   DownloadOutlined,
   DeleteOutlined,
+  EditOutlined,
   ExclamationCircleOutlined,
   FileExcelOutlined,
   ReloadOutlined,
   UploadOutlined,
 } from '@ant-design/icons'
+import dayjs from 'dayjs'
 import * as XLSX from 'xlsx'
-import { loadOrdersData, saveOrdersData } from '../../utils/orderStorage'
 import {
+  loadOrdersData,
+  saveOrdersData,
+  loadReportTemplate,
+  loadReportFields,
+  generateReportText,
+} from '../../utils/orderStorage'
+import {
+  BILLING_RULE_OPTIONS,
+  COMMISSION_MODE_OPTIONS,
+  getCommissionAmount,
   getNetAmount,
+  getSettlementAmount,
   hasManualActualAmount,
   isTiered15BelowMinimum,
+  normalizeBillingRule,
+  normalizeCommissionMode,
 } from '../../utils/pricing'
 import './HistoryOrdersPage.css'
 
@@ -149,6 +168,23 @@ function getDisplayedNetAmount(order) {
   return getNetAmount(order, getOrderDurationSeconds(order))
 }
 
+function toPickerValue(isoString) {
+  if (!isoString) return null
+  const d = dayjs(isoString)
+  return d.isValid() ? d : null
+}
+
+function pickerToIso(dayjsValue) {
+  if (!dayjsValue || !dayjsValue.isValid()) return ''
+  return dayjsValue.toISOString()
+}
+
+function normalizeOptionalActualAmount(value) {
+  if (value === null || value === undefined || value === '') return null
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? Math.max(0, parsed) : null
+}
+
 function HistoryOrdersPage() {
   const [orders, setOrders] = useState([])
   const [activeOrder, setActiveOrder] = useState(null)
@@ -160,6 +196,10 @@ function HistoryOrdersPage() {
   const [importing, setImporting] = useState(false)
   const [importSourceName, setImportSourceName] = useState('')
   const [selectedRowKeys, setSelectedRowKeys] = useState([])
+  const [editOpen, setEditOpen] = useState(false)
+  const [editingOrderId, setEditingOrderId] = useState('')
+  const [editForm] = Form.useForm()
+  const editBillingRule = Form.useWatch('billingRule', editForm)
 
   const refresh = async () => {
     setLoading(true)
@@ -331,6 +371,24 @@ function HistoryOrdersPage() {
     setSelectedRowKeys((prev) => prev.filter((item) => item !== orderId))
   }
 
+  const handleCopyReport = async (record) => {
+    try {
+      const template = loadReportTemplate()
+      const fields = loadReportFields()
+      const text = generateReportText(template, record, fields, {
+        getOrderDurationSeconds,
+        getSettlementAmount,
+        getCommissionAmount,
+        getNetAmount,
+        formatDuration,
+      })
+      await navigator.clipboard.writeText(text)
+      message.success('报单已复制到剪贴板')
+    } catch {
+      message.error('复制失败，请手动复制')
+    }
+  }
+
   const handleBatchDelete = async () => {
     if (selectedRowKeys.length === 0) {
       message.warning('请先选择要删除的订单')
@@ -341,6 +399,110 @@ function HistoryOrdersPage() {
     const nextOrders = orders.filter((item) => !selectedKeySet.has(item.id))
     await persistOrders(nextOrders, `已删除 ${selectedRowKeys.length} 条订单`)
     setSelectedRowKeys([])
+  }
+
+  const openEditModal = (record) => {
+    setEditingOrderId(record.id)
+    editForm.setFieldsValue({
+      startAtInput: toPickerValue(record.startAt),
+      endAtInput: toPickerValue(record.endAt),
+      hourRate: Number(record.hourRate || 0),
+      billingRule: normalizeBillingRule(record.billingRule, 'tiered15'),
+      commissionMode: normalizeCommissionMode(
+        record.commissionMode,
+        'percentage',
+      ),
+      commissionValue: Number(record.commissionValue || 0),
+      boss: record.boss || '',
+      note: record.note || '',
+      actualAmount: normalizeOptionalActualAmount(record.actualAmount),
+      gamePrice: Number(record.gamePrice || 0),
+      gameCount: Number(record.gameCount || 1),
+    })
+    setEditOpen(true)
+  }
+
+  const submitEditOrder = async () => {
+    const values = await editForm.validateFields()
+    const startAt = pickerToIso(values.startAtInput)
+    const endAt = pickerToIso(values.endAtInput)
+
+    if (!startAt || !endAt) {
+      message.error('开始时间和结束时间格式不正确')
+      return
+    }
+
+    if (new Date(endAt).getTime() <= new Date(startAt).getTime()) {
+      message.error('结束时间必须晚于开始时间')
+      return
+    }
+
+    const editBillingRuleVal = normalizeBillingRule(
+      values.billingRule,
+      'tiered15',
+    )
+
+    if (editBillingRuleVal !== 'perGame') {
+      const hourRate = Number(values.hourRate)
+      if (!Number.isFinite(hourRate) || hourRate <= 0) {
+        message.warning('请填写有效的单价')
+        return
+      }
+    }
+
+    const nextOrders = orders.map((item) => {
+      if (item.id !== editingOrderId) return item
+      return {
+        ...item,
+        startAt,
+        endAt,
+        boss: values.boss?.trim() || '',
+        hourRate:
+          editBillingRuleVal === 'perGame' ? 0 : Number(values.hourRate),
+        billingRule: editBillingRuleVal,
+        commissionMode: normalizeCommissionMode(
+          values.commissionMode,
+          'percentage',
+        ),
+        commissionValue: Math.max(0, Number(values.commissionValue || 0)),
+        note: values.note?.trim() || '未备注',
+        actualAmount: normalizeOptionalActualAmount(values.actualAmount),
+        ...(editBillingRuleVal === 'perGame' && {
+          gamePrice: Math.max(0, Number(values.gamePrice || 0)),
+          gameCount: Math.max(1, Math.round(Number(values.gameCount || 1))),
+        }),
+        ...(editBillingRuleVal !== 'perGame' && {
+          gamePrice: undefined,
+          gameCount: undefined,
+        }),
+      }
+    })
+
+    await persistOrders(nextOrders)
+    setEditOpen(false)
+    setEditingOrderId('')
+
+    const totalSeconds = Math.max(
+      0,
+      Math.floor(
+        (new Date(endAt).getTime() - new Date(startAt).getTime()) / 1000,
+      ),
+    )
+    const shortState = getShortTiered15State({
+      startAt,
+      endAt,
+      billingRule: values.billingRule,
+      actualAmount: normalizeOptionalActualAmount(values.actualAmount),
+    })
+
+    if (shortState.shouldGrayOut) {
+      message.warning(
+        '这条订单未满15分钟，当前会按未计费记录显示；如果老板付款了，请手动填写实际到手金额。',
+      )
+      return
+    }
+
+    message.success('订单已更新')
   }
 
   const confirmImportPreview = async () => {
@@ -462,7 +624,15 @@ function HistoryOrdersPage() {
       dataIndex: 'hourRate',
       key: 'hourRate',
       width: 90,
-      render: (value) => {
+      render: (value, row) => {
+        if (row.billingRule === 'perGame') {
+          const text = `${Number(row.gamePrice || 0)}×${row.gameCount || 0}把`
+          return (
+            <Tooltip title={text}>
+              <span>{text}</span>
+            </Tooltip>
+          )
+        }
         const amount = Number(value || 0)
         return (
           <Tooltip title={`¥ ${amount.toFixed(2)}`}>
@@ -505,18 +675,41 @@ function HistoryOrdersPage() {
     {
       title: '操作',
       key: 'action',
-      width: 72,
+      width: 130,
       render: (_, row) => (
-        <Popconfirm
-          title="删除这条历史订单？"
-          okText="删除"
-          cancelText="取消"
-          onConfirm={() => handleDeleteOrder(row.id)}
-        >
-          <Tooltip title="删除订单">
-            <Button type="text" danger size="small" icon={<DeleteOutlined />} />
+        <Space size={0}>
+          <Tooltip title="复制报单">
+            <Button
+              type="text"
+              size="small"
+              icon={<CopyOutlined />}
+              onClick={() => handleCopyReport(row)}
+            />
           </Tooltip>
-        </Popconfirm>
+          <Tooltip title="编辑订单">
+            <Button
+              type="text"
+              size="small"
+              icon={<EditOutlined />}
+              onClick={() => openEditModal(row)}
+            />
+          </Tooltip>
+          <Popconfirm
+            title="删除这条历史订单？"
+            okText="删除"
+            cancelText="取消"
+            onConfirm={() => handleDeleteOrder(row.id)}
+          >
+            <Tooltip title="删除订单">
+              <Button
+                type="text"
+                danger
+                size="small"
+                icon={<DeleteOutlined />}
+              />
+            </Tooltip>
+          </Popconfirm>
+        </Space>
       ),
     },
   ]
@@ -658,6 +851,98 @@ function HistoryOrdersPage() {
             scroll={{ x: 980 }}
           />
         </Space>
+      </Modal>
+
+      <Modal
+        title="编辑订单"
+        open={editOpen}
+        okText="保存修改"
+        cancelText="取消"
+        width={720}
+        onCancel={() => {
+          setEditOpen(false)
+          setEditingOrderId('')
+        }}
+        onOk={submitEditOrder}
+      >
+        <Form
+          layout="vertical"
+          form={editForm}
+          style={{
+            display: 'grid',
+            gridTemplateColumns: '1fr 1fr',
+            gap: '0 16px',
+          }}
+        >
+          <Form.Item
+            label="开始时间"
+            name="startAtInput"
+            rules={[{ required: true, message: '请输入开始时间' }]}
+          >
+            <DatePicker
+              showTime
+              format="YYYY-MM-DD HH:mm"
+              style={{ width: '100%' }}
+              placeholder="选择开始时间"
+            />
+          </Form.Item>
+          <Form.Item
+            label="结束时间"
+            name="endAtInput"
+            rules={[{ required: true, message: '请输入结束时间' }]}
+          >
+            <DatePicker
+              showTime
+              format="YYYY-MM-DD HH:mm"
+              style={{ width: '100%' }}
+              placeholder="选择结束时间"
+            />
+          </Form.Item>
+          {editBillingRule === 'perGame' ? (
+            <>
+              <Form.Item
+                label="把价(元/把)"
+                name="gamePrice"
+                rules={[{ required: true, message: '请填写把价' }]}
+              >
+                <InputNumber min={0} step={5} style={{ width: '100%' }} />
+              </Form.Item>
+              <Form.Item
+                label="把数"
+                name="gameCount"
+                rules={[{ required: true, message: '请填写把数' }]}
+              >
+                <InputNumber min={1} step={1} style={{ width: '100%' }} />
+              </Form.Item>
+            </>
+          ) : (
+            <Form.Item
+              label="单价(元/小时)"
+              name="hourRate"
+              rules={[{ required: true, message: '请填写单价' }]}
+            >
+              <InputNumber min={0.01} step={5} style={{ width: '100%' }} />
+            </Form.Item>
+          )}
+          <Form.Item label="计费规则" name="billingRule">
+            <Select options={BILLING_RULE_OPTIONS} />
+          </Form.Item>
+          <Form.Item label="抽成方式" name="commissionMode">
+            <Select options={COMMISSION_MODE_OPTIONS} />
+          </Form.Item>
+          <Form.Item label="抽成数值" name="commissionValue">
+            <InputNumber min={0} step={1} style={{ width: '100%' }} />
+          </Form.Item>
+          <Form.Item label="老板(选填)" name="boss">
+            <Input maxLength={20} placeholder="例如：张总" />
+          </Form.Item>
+          <Form.Item label="实际到手(选填)" name="actualAmount">
+            <InputNumber min={0} step={1} style={{ width: '100%' }} />
+          </Form.Item>
+          <Form.Item label="备注" name="note" style={{ gridColumn: '1 / -1' }}>
+            <Input maxLength={40} />
+          </Form.Item>
+        </Form>
       </Modal>
     </section>
   )

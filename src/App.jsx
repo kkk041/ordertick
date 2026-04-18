@@ -1,6 +1,12 @@
 import { Suspense, useEffect, useMemo, useState } from 'react'
 import { HashRouter, Navigate, Route, Routes } from 'react-router-dom'
-import { ConfigProvider, Spin, theme as antdTheme } from 'antd'
+import {
+  App as AntdApp,
+  ConfigProvider,
+  Spin,
+  message,
+  theme as antdTheme,
+} from 'antd'
 import zhCN from 'antd/locale/zh_CN'
 import './App.css'
 import MainLayout from './layouts/MainLayout'
@@ -14,6 +20,34 @@ import { applyThemeToDocument, loadTheme } from './config/theme'
 function App() {
   const [appTheme, setAppTheme] = useState(() => loadTheme())
   const activeRouteGroups = menuRouteGroups
+
+  const providerTheme = useMemo(() => {
+    const algorithm =
+      appTheme.mode === 'dark'
+        ? antdTheme.darkAlgorithm
+        : antdTheme.defaultAlgorithm
+
+    const borderRadius = appTheme.mode === 'girl' ? 18 : 12
+
+    return {
+      algorithm,
+      token: {
+        colorPrimary: appTheme.primaryColor,
+        borderRadius,
+      },
+    }
+  }, [appTheme])
+
+  useEffect(() => {
+    message.config({ duration: 6 })
+    ConfigProvider.config({
+      holderRender: (children) => (
+        <ConfigProvider locale={zhCN} theme={providerTheme}>
+          {children}
+        </ConfigProvider>
+      ),
+    })
+  }, [providerTheme])
 
   const activeFlatRoutes = useMemo(() => {
     return flattenRoutes(activeRouteGroups)
@@ -52,59 +86,48 @@ function App() {
     }
   }, [])
 
-  const providerTheme = useMemo(() => {
-    const algorithm =
-      appTheme.mode === 'dark'
-        ? antdTheme.darkAlgorithm
-        : antdTheme.defaultAlgorithm
-
-    const borderRadius = appTheme.mode === 'girl' ? 18 : 12
-
-    return {
-      algorithm,
-      token: {
-        colorPrimary: appTheme.primaryColor,
-        borderRadius,
-      },
-    }
-  }, [appTheme])
-
   return (
-    <ConfigProvider locale={zhCN} theme={providerTheme}>
-      <HashRouter>
-        <MainLayout menuRouteGroups={activeRouteGroups}>
-          <Routes>
-            <Route
-              path="/"
-              element={<Navigate to={defaultRoutePath} replace />}
-            />
-            {activeFlatRoutes.map((route) => {
-              const LazyComponent = route.component
-              return (
-                <Route
-                  key={route.path}
-                  path={route.path}
-                  element={
-                    <Suspense
-                      fallback={
-                        <div className="page-loading">
-                          <Spin />
-                        </div>
-                      }
-                    >
-                      <LazyComponent />
-                    </Suspense>
-                  }
-                />
-              )
-            })}
-            <Route
-              path="*"
-              element={<Navigate to={defaultRoutePath} replace />}
-            />
-          </Routes>
-        </MainLayout>
-      </HashRouter>
+    <ConfigProvider
+      locale={zhCN}
+      theme={providerTheme}
+      message={{ duration: 6 }}
+    >
+      <AntdApp>
+        <HashRouter>
+          <MainLayout menuRouteGroups={activeRouteGroups}>
+            <Routes>
+              <Route
+                path="/"
+                element={<Navigate to={defaultRoutePath} replace />}
+              />
+              {activeFlatRoutes.map((route) => {
+                const LazyComponent = route.component
+                return (
+                  <Route
+                    key={route.path}
+                    path={route.path}
+                    element={
+                      <Suspense
+                        fallback={
+                          <div className="page-loading">
+                            <Spin />
+                          </div>
+                        }
+                      >
+                        <LazyComponent />
+                      </Suspense>
+                    }
+                  />
+                )
+              })}
+              <Route
+                path="*"
+                element={<Navigate to={defaultRoutePath} replace />}
+              />
+            </Routes>
+          </MainLayout>
+        </HashRouter>
+      </AntdApp>
     </ConfigProvider>
   )
 }

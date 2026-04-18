@@ -9,6 +9,7 @@ export const TIERED15_MINIMUM_MINUTES = 15
 export const BILLING_RULE_OPTIONS = [
   { value: 'minute', label: '分钟制' },
   { value: 'tiered15', label: '15分钟制' },
+  { value: 'perGame', label: '按把计费' },
 ]
 
 export const COMMISSION_MODE_OPTIONS = [
@@ -17,7 +18,9 @@ export const COMMISSION_MODE_OPTIONS = [
 ]
 
 export function normalizeBillingRule(value, fallback = 'minute') {
-  return value === 'tiered15' || value === 'minute' ? value : fallback
+  return value === 'tiered15' || value === 'minute' || value === 'perGame'
+    ? value
+    : fallback
 }
 
 export function normalizeCommissionMode(value, fallback = 'percentage') {
@@ -108,6 +111,13 @@ export function getGrossAmount(
   fallback = DEFAULT_PRICING_CONFIG,
 ) {
   const pricing = getOrderPricingConfig(order, fallback)
+
+  if (pricing.billingRule === 'perGame') {
+    return roundCurrency(
+      Number(order.gamePrice || 0) * Math.max(0, Number(order.gameCount || 0)),
+    )
+  }
+
   const billableHours = getBillableHours(totalSeconds, pricing.billingRule)
   return roundCurrency(Number(order.hourRate || 0) * billableHours)
 }
@@ -127,13 +137,16 @@ export function getCommissionAmount(
 ) {
   const pricing = getOrderPricingConfig(order, fallback)
   const settlementAmount = getSettlementAmount(order, totalSeconds, fallback)
-  const billableHours = getBillableHours(totalSeconds, pricing.billingRule)
 
-  if (pricing.commissionMode === 'fixed') {
-    return roundCurrency(billableHours * pricing.commissionValue)
+  if (
+    pricing.billingRule === 'perGame' ||
+    pricing.commissionMode === 'percentage'
+  ) {
+    return roundCurrency((settlementAmount * pricing.commissionValue) / 100)
   }
 
-  return roundCurrency((settlementAmount * pricing.commissionValue) / 100)
+  const billableHours = getBillableHours(totalSeconds, pricing.billingRule)
+  return roundCurrency(billableHours * pricing.commissionValue)
 }
 
 export function getNetAmount(

@@ -685,7 +685,7 @@ function createMainWindow() {
   } else if (fs.existsSync(rendererHtml)) {
     win.loadFile(rendererHtml)
   } else {
-    win.loadURL('http://localhost:5173')
+    win.loadURL('http://localhost:5274')
   }
 
   if (isDev || forceOpenDevtools) {

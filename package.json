@@ -1,7 +1,7 @@
 {
   "name": "ordertick",
   "private": true,
-  "version": "0.0.0",
+  "version": "1.2.0",
   "description": "OrderTick 是一款面向接单场景的桌面计时与收入分析工具",
   "author": "OrderTick",
   "type": "module",
@@ -11,7 +11,7 @@
     "clean:release": "node scripts/clean-release.mjs",
     "dev": "concurrently -k \"npm:dev:renderer\" \"npm:dev:electron\"",
     "dev:renderer": "vite",
-    "dev:electron": "set DEV_SERVER_URL=http://localhost:5173&& wait-on http-get://localhost:5173 && electron .",
+    "dev:electron": "set DEV_SERVER_URL=http://localhost:5274&& wait-on http-get://localhost:5274 && electron .",
     "start": "electron .",
     "start:debug": "set OPEN_DEVTOOLS=1&& electron .",
     "build:renderer": "vite build",

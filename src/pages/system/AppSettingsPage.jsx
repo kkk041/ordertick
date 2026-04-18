@@ -8,11 +8,14 @@ import {
   InputNumber,
   Select,
   Space,
+  Switch,
+  Tag,
+  Tooltip,
   Typography,
   Upload,
   message,
 } from 'antd'
-import { UploadOutlined } from '@ant-design/icons'
+import { DeleteOutlined, PlusOutlined, UploadOutlined } from '@ant-design/icons'
 import {
   defaultBranding,
   loadBranding,
@@ -28,6 +31,10 @@ import {
   chooseDataStorageDirectory,
   getDataStorageConfig,
   savePricingConfig,
+  loadTemplateRows,
+  saveTemplateRows,
+  AUTO_VARIABLES,
+  DEFAULT_TEMPLATE_ROWS,
 } from '../../utils/orderStorage'
 import {
   BILLING_RULE_OPTIONS,
@@ -78,6 +85,7 @@ function AppSettingsPage() {
     DEFAULT_PRICING_CONFIG.commissionValue,
   )
   const [saving, setSaving] = useState(false)
+  const [templateRows, setTemplateRows] = useState(() => loadTemplateRows())
 
   const loadDataDirConfig = async () => {
     const config = await getDataStorageConfig()
@@ -125,6 +133,7 @@ function AppSettingsPage() {
         commissionMode,
         commissionValue,
       })
+      saveTemplateRows(templateRows)
       saveTheme({
         mode: themeMode,
         primaryColor,
@@ -149,8 +158,10 @@ function AppSettingsPage() {
     setBillingRule(DEFAULT_PRICING_CONFIG.billingRule)
     setCommissionMode(DEFAULT_PRICING_CONFIG.commissionMode)
     setCommissionValue(DEFAULT_PRICING_CONFIG.commissionValue)
+    setTemplateRows(DEFAULT_TEMPLATE_ROWS.map((r) => ({ ...r })))
     const nextBranding = saveBranding(defaultBranding)
     await savePricingConfig(DEFAULT_PRICING_CONFIG)
+    saveTemplateRows(DEFAULT_TEMPLATE_ROWS)
     saveTheme(defaultTheme)
     await syncBrandingToDesktopApp(nextBranding)
     message.success('已恢复默认配置与主题')
@@ -324,6 +335,123 @@ function AppSettingsPage() {
           </div>
         </Card>
         */}
+
+        <Card
+          className="app-settings-card app-settings-side-card app-settings-template-card"
+          bordered={false}
+        >
+          <Typography.Title level={5}>报单模板</Typography.Title>
+          <Typography.Paragraph type="secondary">
+            在这里设置你报单要填的内容，带「自动」标记的会帮你自动填好，不用手打。你也可以给每项设个兜底值，万一自动没拿到就用它顶上。
+          </Typography.Paragraph>
+
+          <div className="template-rows-list">
+            {templateRows.map((row, idx) => (
+              <div key={idx} className="template-row-item">
+                <span className="template-row-index">{idx + 1}</span>
+                <Input
+                  value={row.label}
+                  onChange={(e) => {
+                    const next = [...templateRows]
+                    next[idx] = { ...next[idx], label: e.target.value }
+                    setTemplateRows(next)
+                  }}
+                  placeholder="填什么"
+                  style={{ width: 90 }}
+                  size="small"
+                />
+                {AUTO_VARIABLES[row.label] ? (
+                  <Tag color="blue" style={{ margin: 0, flexShrink: 0 }}>
+                    自动
+                  </Tag>
+                ) : (
+                  <Tag style={{ margin: 0, flexShrink: 0 }}>手填</Tag>
+                )}
+                <Input
+                  value={row.defaultValue}
+                  onChange={(e) => {
+                    const next = [...templateRows]
+                    next[idx] = { ...next[idx], defaultValue: e.target.value }
+                    setTemplateRows(next)
+                  }}
+                  placeholder={
+                    AUTO_VARIABLES[row.label]
+                      ? '自动没拿到时用这个顶上'
+                      : '默认填这个'
+                  }
+                  size="small"
+                  style={{ flex: 1, minWidth: 60 }}
+                />
+                <Tooltip title={row.required ? '必填' : '选填'}>
+                  <Switch
+                    checked={row.required}
+                    onChange={(checked) => {
+                      const next = [...templateRows]
+                      next[idx] = { ...next[idx], required: checked }
+                      setTemplateRows(next)
+                    }}
+                    checkedChildren="必填"
+                    unCheckedChildren="选填"
+                    size="small"
+                  />
+                </Tooltip>
+                <Button
+                  type="text"
+                  danger
+                  size="small"
+                  icon={<DeleteOutlined />}
+                  onClick={() => {
+                    setTemplateRows((prev) => prev.filter((_, i) => i !== idx))
+                  }}
+                />
+              </div>
+            ))}
+          </div>
+
+          <Button
+            type="dashed"
+            block
+            icon={<PlusOutlined />}
+            onClick={() => {
+              setTemplateRows((prev) => [
+                ...prev,
+                {
+                  label: '',
+                  source: 'auto',
+                  defaultValue: '',
+                  required: false,
+                },
+              ])
+            }}
+            style={{ marginTop: 8 }}
+          >
+            加一项
+          </Button>
+
+          <div className="template-preview-section">
+            <Typography.Text
+              strong
+              style={{ display: 'block', marginBottom: 4 }}
+            >
+              报单长这样
+            </Typography.Text>
+            <pre className="template-preview-box">
+              {templateRows
+                .map(
+                  (r) =>
+                    `${r.label}：${AUTO_VARIABLES[r.label] ? `【${AUTO_VARIABLES[r.label]}】` : r.defaultValue || '(待填写)'}`,
+                )
+                .join('\n')}
+            </pre>
+          </div>
+
+          <Typography.Text
+            type="secondary"
+            style={{ display: 'block', marginTop: 8 }}
+          >
+            这些内容会自动帮你填好：{Object.keys(AUTO_VARIABLES).join('、')}
+          </Typography.Text>
+        </Card>
 
         <Card
           className="app-settings-card app-settings-side-card app-feedback-card"

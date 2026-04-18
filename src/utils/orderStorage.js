@@ -2,6 +2,168 @@ import { DEFAULT_PRICING_CONFIG, normalizePricingConfig } from './pricing'
 
 const ORDERS_KEY = 'playmate.orders'
 const ACTIVE_ORDER_KEY = 'playmate.activeOrder'
+const REPORT_TEMPLATE_KEY = 'playmate.reportTemplate'
+const REPORT_FIELDS_KEY = 'playmate.reportFields'
+
+/**
+ * 自动变量映射表 — 这些变量会从订单数据中自动填充
+ */
+export const AUTO_VARIABLES = {
+  日期: '订单日期',
+  老板: '老板名称',
+  类型: '备注/游戏类型',
+  起止时间: '开始-结束时间',
+  时长: '订单时长',
+  单价: '单价/把价',
+  总计: '结算金额',
+  抽成: '抽成金额',
+  到手: '到手金额',
+  把数: '游戏把数(按把计费)',
+  把价: '每把价格(按把计费)',
+}
+
+/**
+ * 每个模板行：{ label: string, source: 'auto'|'custom', defaultValue: string, required: boolean }
+ * - source='auto': label 是自动变量名，值从订单自动填充；defaultValue 仅当自动值为空时使用
+ * - source='custom': label 是用户自定义标签，defaultValue 是固定填充内容
+ */
+export const DEFAULT_TEMPLATE_ROWS = [
+  { label: '日期', source: 'auto', defaultValue: '', required: true },
+  { label: '管理', source: 'auto', defaultValue: '', required: false },
+  { label: '老板', source: 'auto', defaultValue: '', required: true },
+  { label: '陪玩', source: 'auto', defaultValue: '', required: false },
+  { label: '类型', source: 'auto', defaultValue: '', required: false },
+  { label: '起止时间', source: 'auto', defaultValue: '', required: true },
+  { label: '时长', source: 'auto', defaultValue: '', required: true },
+  { label: '单价', source: 'auto', defaultValue: '', required: true },
+  { label: '总计', source: 'auto', defaultValue: '', required: true },
+  { label: '抽成', source: 'auto', defaultValue: '', required: true },
+  { label: '到手', source: 'auto', defaultValue: '', required: true },
+  { label: '直属', source: 'auto', defaultValue: '', required: false },
+]
+
+export function loadTemplateRows() {
+  try {
+    const raw = localStorage.getItem(REPORT_TEMPLATE_KEY)
+    if (!raw) return DEFAULT_TEMPLATE_ROWS.map((r) => ({ ...r }))
+    const parsed = JSON.parse(raw)
+    if (
+      Array.isArray(parsed) &&
+      parsed.length > 0 &&
+      parsed[0].label !== undefined
+    ) {
+      return parsed
+    }
+    // Old string format — return default
+    return DEFAULT_TEMPLATE_ROWS.map((r) => ({ ...r }))
+  } catch {
+    return DEFAULT_TEMPLATE_ROWS.map((r) => ({ ...r }))
+  }
+}
+
+export function saveTemplateRows(rows) {
+  try {
+    localStorage.setItem(REPORT_TEMPLATE_KEY, JSON.stringify(rows))
+  } catch {
+    // Ignore
+  }
+}
+
+// Keep old name exports for backward compat but delegate
+export function loadReportTemplate() {
+  return buildTemplateString(loadTemplateRows())
+}
+
+export function saveReportTemplate(template) {
+  // no-op, use saveTemplateRows instead
+}
+
+export function loadReportFields() {
+  const rows = loadTemplateRows()
+  const fields = {}
+  for (const row of rows) {
+    if (row.source === 'custom') {
+      fields[row.label] = row.defaultValue || ''
+    }
+  }
+  return fields
+}
+
+export function saveReportFields(fields) {
+  // no-op, use saveTemplateRows instead
+}
+
+function buildTemplateString(rows) {
+  return rows.map((r) => `${r.label}：{{${r.label}}}`).join('\n')
+}
+
+export function generateReportText(template, order, fields, pricingHelpers) {
+  const {
+    getOrderDurationSeconds,
+    getSettlementAmount,
+    getCommissionAmount,
+    getNetAmount,
+    formatDuration,
+  } = pricingHelpers
+
+  const totalSeconds = getOrderDurationSeconds(order)
+  const settlement = getSettlementAmount(order, totalSeconds)
+  const commission = getCommissionAmount(order, totalSeconds)
+  const net = getNetAmount(order, totalSeconds)
+
+  const startDate = order.startAt ? new Date(order.startAt) : null
+  const endDate = order.endAt ? new Date(order.endAt) : null
+
+  const fmtDate = (d) => (d ? `${d.getMonth() + 1}.${d.getDate()}` : '')
+  const fmtTime = (d) =>
+    d
+      ? `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
+      : ''
+
+  const dateStr = startDate ? fmtDate(startDate) : ''
+  const timeRange =
+    startDate && endDate ? `${fmtTime(startDate)}-${fmtTime(endDate)}` : ''
+
+  const durationStr = totalSeconds > 0 ? formatDuration(totalSeconds) : ''
+
+  let priceStr = ''
+  if (order.billingRule === 'perGame') {
+    priceStr = `${order.gamePrice || 0}/把`
+  } else {
+    priceStr = `${order.hourRate || 0}`
+  }
+
+  const commissionDesc =
+    order.commissionMode === 'percentage'
+      ? `${commission}（${order.commissionValue / 100}）`
+      : `${commission}`
+
+  // 自动变量值映射
+  const autoVars = {
+    日期: dateStr,
+    老板: order.boss || '',
+    类型: order.note || '',
+    起止时间: timeRange,
+    时长: durationStr,
+    单价: priceStr,
+    总计: String(settlement),
+    抽成: commissionDesc,
+    到手: String(net),
+    把数: order.billingRule === 'perGame' ? String(order.gameCount || 0) : '',
+    把价: order.billingRule === 'perGame' ? String(order.gamePrice || 0) : '',
+  }
+
+  // 基于结构化模板行生成报单
+  const rows = loadTemplateRows()
+  const lines = rows.map((row) => {
+    // 优先使用自动变量值，其次 fields 传入值，最后 defaultValue
+    const value =
+      autoVars[row.label] || fields[row.label] || row.defaultValue || ''
+    return `${row.label}：${value}`
+  })
+
+  return lines.join('\n')
+}
 
 function normalizePayload(payload) {
   if (!payload || typeof payload !== 'object') {

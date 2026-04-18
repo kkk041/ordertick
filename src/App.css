@@ -7,3 +7,16 @@
   display: grid;
   place-items: center;
 }
+
+/* 鼠标悬停时暂停 message 消失动画 */
+.ant-message .ant-message-notice {
+  transition: opacity 0.5s ease;
+}
+
+.ant-message .ant-message-notice-wrapper:hover .ant-message-notice {
+  animation-play-state: paused !important;
+}
+
+.ant-message .ant-message-notice-wrapper:hover {
+  animation-play-state: paused !important;
+}

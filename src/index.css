@@ -406,11 +406,38 @@ body {
   color: #ffffff !important;
 }
 
-:root[data-theme='girl'] .ant-menu-dark .ant-menu-item:hover,
+:root[data-theme='girl']
+  .ant-menu-dark
+  .ant-menu-item:not(.ant-menu-item-selected):hover,
 :root[data-theme='girl'] .ant-menu-dark .ant-menu-submenu-title:hover,
-:root[data-theme='girl'] .ant-menu-dark .ant-menu-sub .ant-menu-item:hover {
+:root[data-theme='girl']
+  .ant-menu-dark
+  .ant-menu-sub
+  .ant-menu-item:not(.ant-menu-item-selected):hover {
   background: var(--hover-surface) !important;
   color: var(--text-main) !important;
+}
+
+:root[data-theme='girl']
+  .ant-menu-dark
+  .ant-menu-item.ant-menu-item-selected:hover {
+  background: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--theme-primary) 28%, #ffffff) 0%,
+    color-mix(in srgb, var(--theme-primary) 60%, #ffffff) 100%
+  ) !important;
+  color: #ffffff !important;
+}
+
+:root[data-theme='girl']
+  .ant-menu-dark
+  .ant-menu-item.ant-menu-item-selected:hover
+  .ant-menu-item-icon,
+:root[data-theme='girl']
+  .ant-menu-dark
+  .ant-menu-item.ant-menu-item-selected:hover
+  .ant-menu-title-content {
+  color: #ffffff !important;
 }
 
 :root[data-theme='girl'] .ant-card,
@@ -799,4 +826,48 @@ body {
 :root[data-theme='dark'] .ant-menu-dark .ant-menu-sub .ant-menu-item:hover {
   background: var(--hover-surface) !important;
   color: var(--text-main) !important;
+}
+
+/* ── 暗色模式 message 提示条 ── */
+:root[data-theme='dark'] .ant-message .ant-message-notice-content,
+:root[data-theme='dark'] .ant-message-notice-content {
+  background: #111b2e !important;
+  color: #e2e8f0 !important;
+  border: 1px solid #223450 !important;
+  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.45) !important;
+}
+
+:root[data-theme='dark'] .ant-message .ant-message-warning .anticon,
+:root[data-theme='dark'] .ant-message-warning .anticon {
+  color: #faad14 !important;
+}
+
+:root[data-theme='dark'] .ant-message .ant-message-success .anticon,
+:root[data-theme='dark'] .ant-message-success .anticon {
+  color: #52c41a !important;
+}
+
+:root[data-theme='dark'] .ant-message .ant-message-error .anticon,
+:root[data-theme='dark'] .ant-message-error .anticon {
+  color: #ff4d4f !important;
+}
+
+:root[data-theme='dark']
+  .ant-message
+  .ant-message-notice
+  .ant-message-custom-content,
+:root[data-theme='dark'] .ant-message-notice .ant-message-custom-content {
+  color: #e2e8f0 !important;
+}
+
+:root[data-theme='dark']
+  .ant-message
+  .ant-message-notice
+  .ant-message-custom-content
+  > span,
+:root[data-theme='dark']
+  .ant-message-notice
+  .ant-message-custom-content
+  > span {
+  color: #e2e8f0 !important;
 }

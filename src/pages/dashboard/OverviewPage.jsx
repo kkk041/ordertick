@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import {
   Alert,
   Button,
@@ -14,7 +15,6 @@ import {
   Row,
   Select,
   Space,
-  Statistic,
   Table,
   Tag,
   Tooltip,
@@ -24,11 +24,13 @@ import {
 import {
   BulbOutlined,
   ClockCircleOutlined,
+  CopyOutlined,
   DeleteOutlined,
   EditOutlined,
   ExclamationCircleOutlined,
   FileTextOutlined,
   QuestionCircleOutlined,
+  SettingOutlined,
 } from '@ant-design/icons'
 import dayjs from 'dayjs'
 import AnimatedNumber from '../../components/common/AnimatedNumber'
@@ -37,6 +39,9 @@ import {
   getPricingConfig,
   loadOrdersData,
   saveOrdersData,
+  loadReportTemplate,
+  loadReportFields,
+  generateReportText,
 } from '../../utils/orderStorage'
 import {
   BILLING_RULE_OPTIONS,
@@ -438,6 +443,7 @@ function renderOverviewPanelTitle(icon, label) {
 }
 
 function OverviewPage() {
+  const navigate = useNavigate()
   const [orders, setOrders] = useState([])
   const [activeOrder, setActiveOrder] = useState(null)
   const [settlementFeedback, setSettlementFeedback] = useState(null)
@@ -446,6 +452,8 @@ function OverviewPage() {
   const [note, setNote] = useState('')
   const [boss, setBoss] = useState('')
   const [hourRate, setHourRate] = useState(40)
+  const [gamePrice, setGamePrice] = useState(0)
+  const [gameCount, setGameCount] = useState(1)
   const [billingRule, setBillingRule] = useState(
     DEFAULT_PRICING_CONFIG.billingRule,
   )
@@ -537,16 +545,26 @@ function OverviewPage() {
     return () => window.clearInterval(timer)
   }, [])
 
+  const settlementHoveredRef = useRef(false)
+
   useEffect(() => {
     if (!settlementFeedback) {
       return undefined
     }
 
-    const timer = window.setTimeout(() => {
-      setSettlementFeedback(null)
-    }, 2400)
+    let elapsed = 0
+    const tick = 200
+    const duration = 8000
+    const timer = window.setInterval(() => {
+      if (!settlementHoveredRef.current) {
+        elapsed += tick
+      }
+      if (elapsed >= duration) {
+        setSettlementFeedback(null)
+      }
+    }, tick)
 
-    return () => window.clearTimeout(timer)
+    return () => window.clearInterval(timer)
   }, [settlementFeedback])
 
   const todayKey = toDateKey(nowMs)
@@ -665,9 +683,16 @@ function OverviewPage() {
       return
     }
 
-    const validHourRate = ensureHourRate(hourRate)
-    if (validHourRate === null) {
-      return
+    const currentBillingRule = normalizeBillingRule(
+      billingRule,
+      pricingConfig.billingRule,
+    )
+
+    if (currentBillingRule !== 'perGame') {
+      const validHourRate = ensureHourRate(hourRate)
+      if (validHourRate === null) {
+        return
+      }
     }
 
     const payload = {
@@ -675,8 +700,8 @@ function OverviewPage() {
       startAt: new Date().toISOString(),
       note: note.trim() || '未备注',
       boss: boss.trim() || '',
-      hourRate: validHourRate,
-      billingRule: normalizeBillingRule(billingRule, pricingConfig.billingRule),
+      hourRate: currentBillingRule === 'perGame' ? 0 : ensureHourRate(hourRate),
+      billingRule: currentBillingRule,
       commissionMode: normalizeCommissionMode(
         commissionMode,
         pricingConfig.commissionMode,
@@ -684,6 +709,10 @@ function OverviewPage() {
       commissionValue: Math.max(0, Number(commissionValue || 0)),
       actualAmount: null,
       status: 'running',
+      ...(currentBillingRule === 'perGame' && {
+        gamePrice: Math.max(0, Number(gamePrice || 0)),
+        gameCount: Math.max(1, Math.round(Number(gameCount || 1))),
+      }),
     }
 
     setActiveOrder(payload)
@@ -696,12 +725,19 @@ function OverviewPage() {
       return
     }
 
-    const validHourRate = ensureHourRate(
-      hourRate || activeOrder.hourRate,
-      '结束接单前请先填写单价，单价为必填项',
+    const currentBillingRule = normalizeBillingRule(
+      billingRule || activeOrder.billingRule,
+      pricingConfig.billingRule,
     )
-    if (validHourRate === null) {
-      return
+
+    if (currentBillingRule !== 'perGame') {
+      const validHourRate = ensureHourRate(
+        hourRate || activeOrder.hourRate,
+        '结束接单前请先填写单价，单价为必填项',
+      )
+      if (validHourRate === null) {
+        return
+      }
     }
 
     const endAt = new Date().toISOString()
@@ -711,11 +747,11 @@ function OverviewPage() {
       status: 'done',
       note: note.trim() || activeOrder.note || '未备注',
       boss: boss.trim() || activeOrder.boss || '',
-      hourRate: validHourRate,
-      billingRule: normalizeBillingRule(
-        billingRule || activeOrder.billingRule,
-        pricingConfig.billingRule,
-      ),
+      hourRate:
+        currentBillingRule === 'perGame'
+          ? 0
+          : ensureHourRate(hourRate || activeOrder.hourRate),
+      billingRule: currentBillingRule,
       commissionMode: normalizeCommissionMode(
         commissionMode || activeOrder.commissionMode,
         pricingConfig.commissionMode,
@@ -725,6 +761,13 @@ function OverviewPage() {
         Number(commissionValue ?? activeOrder.commissionValue ?? 0),
       ),
       actualAmount: normalizeOptionalActualAmount(activeOrder.actualAmount),
+      ...(currentBillingRule === 'perGame' && {
+        gamePrice: Math.max(0, Number(gamePrice || activeOrder.gamePrice || 0)),
+        gameCount: Math.max(
+          1,
+          Math.round(Number(gameCount || activeOrder.gameCount || 1)),
+        ),
+      }),
     }
 
     const endedSeconds = getOrderDurationSeconds(
@@ -765,6 +808,33 @@ function OverviewPage() {
     setOrders((prev) => prev.filter((item) => item.id !== id))
   }
 
+  const handleCopyReport = async (record) => {
+    try {
+      const template = loadReportTemplate()
+      const fields = loadReportFields()
+      const text = generateReportText(template, record, fields, {
+        getOrderDurationSeconds,
+        getSettlementAmount,
+        getCommissionAmount,
+        getNetAmount,
+        formatDuration,
+      })
+      await navigator.clipboard.writeText(text)
+      message.success('报单已复制到剪贴板')
+    } catch {
+      message.error('复制失败，请手动复制')
+    }
+  }
+
+  const handleCopyLatestReport = () => {
+    const latestDone = todayOrders.find((o) => o.status === 'done')
+    if (!latestDone) {
+      message.warning('今日还没有已完成的订单，无法生成报单')
+      return
+    }
+    handleCopyReport(latestDone)
+  }
+
   const openSupplementModal = () => {
     const end = new Date()
     const start = new Date(end.getTime() - 60 * 60 * 1000)
@@ -798,12 +868,19 @@ function OverviewPage() {
       return
     }
 
-    const validHourRate = ensureHourRate(
-      values.hourRate,
-      '补录订单时请填写单价，单价为必填项',
+    const suppBillingRule = normalizeBillingRule(
+      values.billingRule,
+      pricingConfig.billingRule,
     )
-    if (validHourRate === null) {
-      return
+
+    if (suppBillingRule !== 'perGame') {
+      const validHourRate = ensureHourRate(
+        values.hourRate,
+        '补录订单时请填写单价，单价为必填项',
+      )
+      if (validHourRate === null) {
+        return
+      }
     }
 
     const newOrder = {
@@ -812,11 +889,9 @@ function OverviewPage() {
       endAt,
       boss: values.boss?.trim() || '',
       note: values.note?.trim() || '补录订单',
-      hourRate: validHourRate,
-      billingRule: normalizeBillingRule(
-        values.billingRule,
-        pricingConfig.billingRule,
-      ),
+      hourRate:
+        suppBillingRule === 'perGame' ? 0 : ensureHourRate(values.hourRate),
+      billingRule: suppBillingRule,
       commissionMode: normalizeCommissionMode(
         values.commissionMode,
         pricingConfig.commissionMode,
@@ -824,6 +899,10 @@ function OverviewPage() {
       commissionValue: Math.max(0, Number(values.commissionValue || 0)),
       actualAmount: normalizeOptionalActualAmount(values.actualAmount),
       status: 'done',
+      ...(suppBillingRule === 'perGame' && {
+        gamePrice: Math.max(0, Number(values.gamePrice || 0)),
+        gameCount: Math.max(1, Math.round(Number(values.gameCount || 1))),
+      }),
     }
 
     const shortTiered15State = getShortTiered15State({
@@ -863,6 +942,8 @@ function OverviewPage() {
       boss: record.boss || '',
       note: record.note || '',
       actualAmount: normalizeOptionalActualAmount(record.actualAmount),
+      gamePrice: Number(record.gamePrice || 0),
+      gameCount: Number(record.gameCount || 1),
     })
     setIsEditOpen(true)
   }
@@ -882,12 +963,19 @@ function OverviewPage() {
       return
     }
 
-    const validHourRate = ensureHourRate(
-      values.hourRate,
-      '保存订单前请填写单价，单价为必填项',
+    const editBillingRuleVal = normalizeBillingRule(
+      values.billingRule,
+      pricingConfig.billingRule,
     )
-    if (validHourRate === null) {
-      return
+
+    if (editBillingRuleVal !== 'perGame') {
+      const validHourRate = ensureHourRate(
+        values.hourRate,
+        '保存订单前请填写单价，单价为必填项',
+      )
+      if (validHourRate === null) {
+        return
+      }
     }
 
     setOrders((prev) =>
@@ -901,11 +989,11 @@ function OverviewPage() {
           startAt,
           endAt,
           boss: values.boss?.trim() || '',
-          hourRate: validHourRate,
-          billingRule: normalizeBillingRule(
-            values.billingRule,
-            pricingConfig.billingRule,
-          ),
+          hourRate:
+            editBillingRuleVal === 'perGame'
+              ? 0
+              : ensureHourRate(values.hourRate),
+          billingRule: editBillingRuleVal,
           commissionMode: normalizeCommissionMode(
             values.commissionMode,
             pricingConfig.commissionMode,
@@ -913,6 +1001,14 @@ function OverviewPage() {
           commissionValue: Math.max(0, Number(values.commissionValue || 0)),
           note: values.note?.trim() || '未备注',
           actualAmount: normalizeOptionalActualAmount(values.actualAmount),
+          ...(editBillingRuleVal === 'perGame' && {
+            gamePrice: Math.max(0, Number(values.gamePrice || 0)),
+            gameCount: Math.max(1, Math.round(Number(values.gameCount || 1))),
+          }),
+          ...(editBillingRuleVal !== 'perGame' && {
+            gamePrice: undefined,
+            gameCount: undefined,
+          }),
         }
       }),
     )
@@ -970,12 +1066,19 @@ function OverviewPage() {
       return
     }
 
-    const validHourRate = ensureHourRate(
-      values.hourRate,
-      '快速补入前请填写单价，单价为必填项',
+    const qcBillingRule = normalizeBillingRule(
+      values.billingRule,
+      pricingConfig.billingRule,
     )
-    if (validHourRate === null) {
-      return
+
+    if (qcBillingRule !== 'perGame') {
+      const validHourRate = ensureHourRate(
+        values.hourRate,
+        '快速补入前请填写单价，单价为必填项',
+      )
+      if (validHourRate === null) {
+        return
+      }
     }
 
     const newOrder = {
@@ -984,11 +1087,9 @@ function OverviewPage() {
       endAt,
       boss: '未填写',
       note: '未填写',
-      hourRate: validHourRate,
-      billingRule: normalizeBillingRule(
-        values.billingRule,
-        pricingConfig.billingRule,
-      ),
+      hourRate:
+        qcBillingRule === 'perGame' ? 0 : ensureHourRate(values.hourRate),
+      billingRule: qcBillingRule,
       commissionMode: normalizeCommissionMode(
         values.commissionMode,
         pricingConfig.commissionMode,
@@ -996,6 +1097,10 @@ function OverviewPage() {
       commissionValue: Math.max(0, Number(values.commissionValue || 0)),
       actualAmount: normalizeOptionalActualAmount(values.actualAmount),
       status: 'done',
+      ...(qcBillingRule === 'perGame' && {
+        gamePrice: Math.max(0, Number(values.gamePrice || 0)),
+        gameCount: Math.max(1, Math.round(Number(values.gameCount || 1))),
+      }),
     }
 
     const shortTiered15State = getShortTiered15State({
@@ -1122,7 +1227,10 @@ function OverviewPage() {
       key: 'priceSummary',
       width: 180,
       render: (_, record) => {
-        const hourRateText = Number(record.hourRate || 0).toFixed(2)
+        const isPerGame = record.billingRule === 'perGame'
+        const priceLabel = isPerGame
+          ? `${Number(record.gamePrice || 0)}×${record.gameCount || 0}把`
+          : Number(record.hourRate || 0).toFixed(2)
         const settlementText = Number(
           getSettlementAmount(record, getOrderDurationSeconds(record, nowMs)),
         ).toFixed(2)
@@ -1138,11 +1246,18 @@ function OverviewPage() {
           actualAmount: record.actualAmount,
         })
 
-        const compact = `${formatTableMoneyInteger(record.hourRate)}/${formatTableMoneyInteger(getSettlementAmount(record, getOrderDurationSeconds(record, nowMs)))}/${formatTableMoneyInteger(calcCommissionTotal(record, nowMs))}`
+        const compactPrice = isPerGame
+          ? `${Number(record.gamePrice || 0)}×${record.gameCount || 0}`
+          : formatTableMoneyInteger(record.hourRate)
+        const compact = `${compactPrice}/${formatTableMoneyInteger(getSettlementAmount(record, getOrderDurationSeconds(record, nowMs)))}/${formatTableMoneyInteger(calcCommissionTotal(record, nowMs))}`
+
+        const tooltipLabel = isPerGame
+          ? `把价¥${Number(record.gamePrice || 0)} × ${record.gameCount || 0}把`
+          : `单价¥${Number(record.hourRate || 0).toFixed(2)}`
 
         return (
           <Tooltip
-            title={`单价¥${hourRateText} / 规则${getBillingRuleLabel(pricing.billingRule)} / ${getCommissionModeLabel(pricing.commissionMode)} ${pricing.commissionMode === 'fixed' ? `¥${Number(pricing.commissionValue || 0).toFixed(2)}/小时` : `${Number(pricing.commissionValue || 0).toFixed(2)}%`} / 结算¥${settlementText} / 抽成金额¥${commissionText} / ${hasActualNetOverride ? `实际到手¥${netText}` : `到手¥${netText}`}`}
+            title={`${tooltipLabel} / 规则${getBillingRuleLabel(pricing.billingRule)} / ${getCommissionModeLabel(pricing.commissionMode)} ${pricing.commissionMode === 'fixed' ? `¥${Number(pricing.commissionValue || 0).toFixed(2)}/小时` : `${Number(pricing.commissionValue || 0).toFixed(2)}%`} / 结算¥${settlementText} / 抽成金额¥${commissionText} / ${hasActualNetOverride ? `实际到手¥${netText}` : `到手¥${netText}`}`}
           >
             <span
               className={`price-summary-text ${
@@ -1195,9 +1310,18 @@ function OverviewPage() {
     {
       title: '操作',
       key: 'action',
-      width: 74,
+      width: 104,
       render: (_, record) => (
         <Space size={2}>
+          <Tooltip title="复制报单">
+            <Button
+              type="text"
+              size="small"
+              className="action-icon-btn"
+              icon={<CopyOutlined />}
+              onClick={() => handleCopyReport(record)}
+            />
+          </Tooltip>
           <Tooltip title="编辑订单">
             <Button
               type="text"
@@ -1232,14 +1356,35 @@ function OverviewPage() {
     <section className="overview-page">
       <div className="overview-stack">
         <div className="overview-hero">
-          <div>
+          <div className="overview-hero-top">
             <h2>今日接单统计</h2>
-            <Typography.Text type="secondary">
-              打开软件直接计时，帮你快速算出今天接单了多少小时。
-            </Typography.Text>
+            <div className="overview-hero-cta">
+              <Tooltip title="一键复制最近一笔已完成订单的报单文本到剪贴板，粘贴即可发送">
+                <Button
+                  type="primary"
+                  icon={<CopyOutlined />}
+                  className="overview-hero-btn is-copy"
+                  onClick={handleCopyLatestReport}
+                >
+                  一键复制报单
+                  <QuestionCircleOutlined className="overview-hero-btn-help" />
+                </Button>
+              </Tooltip>
+              <Tooltip title="自定义报单模板字段、默认值和必填项，跳转到软件设置页配置">
+                <Button
+                  icon={<SettingOutlined />}
+                  className="overview-hero-btn is-config"
+                  onClick={() => navigate('/system/app-settings')}
+                >
+                  配置报单模板
+                  <QuestionCircleOutlined className="overview-hero-btn-help" />
+                </Button>
+              </Tooltip>
+            </div>
           </div>
           <div className="overview-hero-badges">
             <span className="overview-hero-badge">{`今日 ${todayOrders.length} 单`}</span>
+            <span className="overview-hero-badge">{`时长 ${formatDuration(todayTotalSeconds)}`}</span>
             <span className="overview-hero-badge">{`预计 ¥${todayExpectedIncome.toFixed(2)}`}</span>
             <span className="overview-hero-badge is-spotlight">{`到手 ¥${todayActualIncome.toFixed(2)}`}</span>
             <span
@@ -1251,63 +1396,6 @@ function OverviewPage() {
             </span>
           </div>
         </div>
-
-        <Row gutter={[10, 10]}>
-          <Col xs={24} sm={12} lg={6}>
-            <Card size="small" className="overview-metric-card is-duration">
-              <Statistic
-                title="今日总时长"
-                value={formatDuration(todayTotalSeconds)}
-              />
-            </Card>
-          </Col>
-          <Col xs={24} sm={12} lg={6}>
-            <Card size="small" className="overview-metric-card">
-              <Statistic
-                title="今日订单数"
-                value={todayOrders.length}
-                formatter={(value) => (
-                  <AnimatedNumber value={Number(value || 0)} suffix=" 单" />
-                )}
-              />
-            </Card>
-          </Col>
-          <Col xs={24} sm={12} lg={6}>
-            <Card size="small" className="overview-metric-card is-income">
-              <Statistic
-                title="预计收入"
-                value={todayExpectedIncome}
-                formatter={(value) => (
-                  <AnimatedNumber
-                    value={Number(value || 0)}
-                    decimals={2}
-                    prefix="¥ "
-                  />
-                )}
-              />
-            </Card>
-          </Col>
-          <Col xs={24} sm={12} lg={6}>
-            <Card
-              size="small"
-              className={`overview-metric-card is-net ${
-                activeOrder ? 'is-live' : ''
-              }`}
-            >
-              <Statistic
-                title="到手收入"
-                value={todayActualIncome}
-                formatter={(value) => (
-                  <AnimatedNumber
-                    value={Number(value || 0)}
-                    decimals={2}
-                    prefix="¥ "
-                  />
-                )}
-              />
-            </Card>
-          </Col>
-        </Row>
 
         <Card
           title={renderOverviewPanelTitle(<ClockCircleOutlined />, '快速计时')}
@@ -1335,7 +1423,7 @@ function OverviewPage() {
                 maxLength={40}
               />
             </Col>
-            <Col xs={24} md={5}>
+            <Col xs={24} md={4}>
               <Typography.Text className="overview-form-label">
                 老板(选填)
               </Typography.Text>
@@ -1346,20 +1434,55 @@ function OverviewPage() {
                 maxLength={20}
               />
             </Col>
-            <Col xs={24} md={5}>
-              <Typography.Text className="overview-form-label">
-                单价(元/小时)
-              </Typography.Text>
-              <InputNumber
-                value={hourRate}
-                min={0.01}
-                step={5}
-                style={{ width: '100%' }}
-                placeholder="必填"
-                onChange={(value) => setHourRate(Number(value || 0))}
-              />
+            <Col xs={24} md={4}>
+              {billingRule === 'perGame' ? (
+                <>
+                  <Typography.Text className="overview-form-label">
+                    把价(元/把)
+                  </Typography.Text>
+                  <InputNumber
+                    value={gamePrice}
+                    min={0}
+                    step={5}
+                    style={{ width: '100%' }}
+                    placeholder="每把单价"
+                    onChange={(value) => setGamePrice(Number(value || 0))}
+                  />
+                </>
+              ) : (
+                <>
+                  <Typography.Text className="overview-form-label">
+                    单价(元/小时)
+                  </Typography.Text>
+                  <InputNumber
+                    value={hourRate}
+                    min={0.01}
+                    step={5}
+                    style={{ width: '100%' }}
+                    placeholder="必填"
+                    onChange={(value) => setHourRate(Number(value || 0))}
+                  />
+                </>
+              )}
             </Col>
-            <Col xs={24} md={6}>
+            {billingRule === 'perGame' && (
+              <Col xs={24} md={2}>
+                <Typography.Text className="overview-form-label">
+                  把数
+                </Typography.Text>
+                <InputNumber
+                  value={gameCount}
+                  min={1}
+                  step={1}
+                  style={{ width: '100%' }}
+                  placeholder="几把"
+                  onChange={(value) =>
+                    setGameCount(Math.max(1, Math.round(Number(value || 1))))
+                  }
+                />
+              </Col>
+            )}
+            <Col xs={24} md={8}>
               <Typography.Text className="overview-form-label">
                 本单进行时长
               </Typography.Text>
@@ -1385,121 +1508,9 @@ function OverviewPage() {
                 )}
               </div>
             </Col>
-            <Col xs={24} md={8}>
-              <Typography.Text className="overview-form-label">
-                {renderFieldLabel('计费规则', BILLING_RULE_HELP)}
-              </Typography.Text>
-              <Select
-                value={billingRule}
-                options={BILLING_RULE_OPTIONS}
-                onChange={setBillingRule}
-              />
-            </Col>
-            <Col xs={24} md={8}>
-              <Typography.Text className="overview-form-label">
-                {renderFieldLabel('抽成方式', COMMISSION_MODE_HELP)}
-              </Typography.Text>
-              <Select
-                value={commissionMode}
-                options={COMMISSION_MODE_OPTIONS}
-                onChange={setCommissionMode}
-              />
-            </Col>
-            <Col xs={24} md={8}>
-              <Typography.Text className="overview-form-label">
-                {renderFieldLabel(
-                  commissionMode === 'fixed' ? '每小时抽成(元)' : '抽成比例(%)',
-                  COMMISSION_VALUE_HELP,
-                )}
-              </Typography.Text>
-              <InputNumber
-                value={commissionValue}
-                min={0}
-                step={commissionMode === 'fixed' ? 1 : 5}
-                style={{ width: '100%' }}
-                onChange={(value) => setCommissionValue(Number(value || 0))}
-              />
-            </Col>
-            <Col xs={24} md={8}>
-              <Typography.Text className="overview-form-label">
-                {renderFieldLabel(
-                  '实际到手(选填)',
-                  '如果这单最终到手和系统计算结果不一致，可以手动填写实际收到的金额；填写后，到手金额将优先按这里显示。',
-                )}
-              </Typography.Text>
-              <InputNumber
-                value={activeOrder ? (activeOrder.actualAmount ?? null) : null}
-                min={0}
-                step={1}
-                disabled={!activeOrder}
-                style={{ width: '100%' }}
-                placeholder={
-                  activeOrder ? '可手动修正到手金额' : '开始接单后可填写'
-                }
-                onChange={(value) => {
-                  if (!activeOrder) {
-                    return
-                  }
-
-                  setActiveOrder((prev) => {
-                    if (!prev) {
-                      return prev
-                    }
-
-                    return {
-                      ...prev,
-                      actualAmount: normalizeOptionalActualAmount(value),
-                    }
-                  })
-                }}
-              />
-            </Col>
-            {activeOrder && activeShortTiered15State.belowMinimum ? (
-              <Col xs={24}>
-                {renderShortTiered15Notice({
-                  totalSeconds: activeSeconds,
-                  billingRule: activeOrder.billingRule,
-                  actualAmount: activeOrder.actualAmount,
-                  context: 'active',
-                })}
-              </Col>
-            ) : null}
           </Row>
 
-          {settlementFeedback ? (
-            <div
-              key={settlementFeedback.id}
-              className={`overview-settlement-flash ${
-                settlementFeedback.isShortTiered15Unbilled ? 'is-muted' : ''
-              }`}
-            >
-              <span className="overview-settlement-flash-kicker">
-                {settlementFeedback.isShortTiered15Unbilled
-                  ? '本单未计费保存'
-                  : '本单结算完成'}
-              </span>
-              <strong className="overview-settlement-flash-amount">
-                <AnimatedNumber
-                  value={settlementFeedback.netAmount}
-                  decimals={2}
-                  prefix="¥ "
-                  duration={920}
-                />
-              </strong>
-              <div className="overview-settlement-flash-meta">
-                <span>{settlementFeedback.durationText}</span>
-                <span>{`结算 ¥${settlementFeedback.settlementAmount.toFixed(2)}`}</span>
-                <span>{`抽成 ¥${settlementFeedback.commissionAmount.toFixed(2)}`}</span>
-                <span className="is-net">
-                  {settlementFeedback.isShortTiered15Unbilled
-                    ? '未计费，可后续删或补'
-                    : '到手已入账'}
-                </span>
-              </div>
-            </div>
-          ) : null}
-
-          <Space style={{ marginTop: 10 }}>
+          <Space style={{ marginTop: 10, marginBottom: 6 }}>
             <Button
               type="primary"
               className={`overview-action-btn overview-action-btn-start ${
@@ -1538,6 +1549,139 @@ function OverviewPage() {
               </Tag>
             )}
           </Space>
+
+          {settlementFeedback ? (
+            <div
+              key={settlementFeedback.id}
+              className={`overview-settlement-flash ${
+                settlementFeedback.isShortTiered15Unbilled ? 'is-muted' : ''
+              }`}
+              onMouseEnter={() => {
+                settlementHoveredRef.current = true
+              }}
+              onMouseLeave={() => {
+                settlementHoveredRef.current = false
+              }}
+            >
+              <span className="overview-settlement-flash-kicker">
+                {settlementFeedback.isShortTiered15Unbilled
+                  ? '本单未计费保存'
+                  : '本单结算完成'}
+              </span>
+              <strong className="overview-settlement-flash-amount">
+                <AnimatedNumber
+                  value={settlementFeedback.netAmount}
+                  decimals={2}
+                  prefix="¥ "
+                  duration={920}
+                />
+              </strong>
+              <div className="overview-settlement-flash-meta">
+                <span>{settlementFeedback.durationText}</span>
+                <span>{`结算 ¥${settlementFeedback.settlementAmount.toFixed(2)}`}</span>
+                <span>{`抽成 ¥${settlementFeedback.commissionAmount.toFixed(2)}`}</span>
+                <span className="is-net">
+                  {settlementFeedback.isShortTiered15Unbilled
+                    ? '未计费，可后续删或补'
+                    : '到手已入账'}
+                </span>
+              </div>
+            </div>
+          ) : null}
+
+          <div className="overview-secondary-fields">
+            <Typography.Text
+              type="secondary"
+              className="overview-secondary-label"
+            >
+              计费设置
+            </Typography.Text>
+            <Row gutter={[8, 6]}>
+              <Col xs={12} md={6}>
+                <Typography.Text className="overview-form-label-sm">
+                  {renderFieldLabel('计费规则', BILLING_RULE_HELP)}
+                </Typography.Text>
+                <Select
+                  size="small"
+                  value={billingRule}
+                  options={BILLING_RULE_OPTIONS}
+                  onChange={setBillingRule}
+                />
+              </Col>
+              <Col xs={12} md={6}>
+                <Typography.Text className="overview-form-label-sm">
+                  {renderFieldLabel('抽成方式', COMMISSION_MODE_HELP)}
+                </Typography.Text>
+                <Select
+                  size="small"
+                  value={commissionMode}
+                  options={COMMISSION_MODE_OPTIONS}
+                  onChange={setCommissionMode}
+                />
+              </Col>
+              <Col xs={12} md={6}>
+                <Typography.Text className="overview-form-label-sm">
+                  {renderFieldLabel(
+                    commissionMode === 'fixed'
+                      ? '每小时抽成(元)'
+                      : '抽成比例(%)',
+                    COMMISSION_VALUE_HELP,
+                  )}
+                </Typography.Text>
+                <InputNumber
+                  size="small"
+                  value={commissionValue}
+                  min={0}
+                  step={commissionMode === 'fixed' ? 1 : 5}
+                  style={{ width: '100%' }}
+                  onChange={(value) => setCommissionValue(Number(value || 0))}
+                />
+              </Col>
+              <Col xs={12} md={6}>
+                <Typography.Text className="overview-form-label-sm">
+                  {renderFieldLabel(
+                    '实际到手(选填)',
+                    '如果这单最终到手和系统计算结果不一致，可以手动填写实际收到的金额；填写后，到手金额将优先按这里显示。',
+                  )}
+                </Typography.Text>
+                <InputNumber
+                  size="small"
+                  value={
+                    activeOrder ? (activeOrder.actualAmount ?? null) : null
+                  }
+                  min={0}
+                  step={1}
+                  disabled={!activeOrder}
+                  style={{ width: '100%' }}
+                  placeholder={activeOrder ? '可手动修正' : '接单后可填'}
+                  onChange={(value) => {
+                    if (!activeOrder) {
+                      return
+                    }
+                    setActiveOrder((prev) => {
+                      if (!prev) {
+                        return prev
+                      }
+                      return {
+                        ...prev,
+                        actualAmount: normalizeOptionalActualAmount(value),
+                      }
+                    })
+                  }}
+                />
+              </Col>
+            </Row>
+            {activeOrder && activeShortTiered15State.belowMinimum ? (
+              <div style={{ marginTop: 4 }}>
+                {renderShortTiered15Notice({
+                  totalSeconds: activeSeconds,
+                  billingRule: activeOrder.billingRule,
+                  actualAmount: activeOrder.actualAmount,
+                  context: 'active',
+                })}
+              </div>
+            ) : null}
+          </div>
         </Card>
 
         <Card
@@ -1667,13 +1811,32 @@ function OverviewPage() {
               placeholder="选择结束时间"
             />
           </Form.Item>
-          <Form.Item
-            label="单价(元/小时)"
-            name="hourRate"
-            rules={[{ required: true, message: '请填写单价' }]}
-          >
-            <InputNumber min={0.01} step={5} style={{ width: '100%' }} />
-          </Form.Item>
+          {supplementBillingRule === 'perGame' ? (
+            <>
+              <Form.Item
+                label="把价(元/把)"
+                name="gamePrice"
+                rules={[{ required: true, message: '请填写把价' }]}
+              >
+                <InputNumber min={0} step={5} style={{ width: '100%' }} />
+              </Form.Item>
+              <Form.Item
+                label="把数"
+                name="gameCount"
+                rules={[{ required: true, message: '请填写把数' }]}
+              >
+                <InputNumber min={1} step={1} style={{ width: '100%' }} />
+              </Form.Item>
+            </>
+          ) : (
+            <Form.Item
+              label="单价(元/小时)"
+              name="hourRate"
+              rules={[{ required: true, message: '请填写单价' }]}
+            >
+              <InputNumber min={0.01} step={5} style={{ width: '100%' }} />
+            </Form.Item>
+          )}
           <Form.Item
             label={renderFieldLabel('计费规则', BILLING_RULE_HELP)}
             name="billingRule"
@@ -1758,13 +1921,32 @@ function OverviewPage() {
               placeholder="选择结束时间"
             />
           </Form.Item>
-          <Form.Item
-            label="单价(元/小时)"
-            name="hourRate"
-            rules={[{ required: true, message: '请填写单价' }]}
-          >
-            <InputNumber min={0.01} step={5} style={{ width: '100%' }} />
-          </Form.Item>
+          {editBillingRule === 'perGame' ? (
+            <>
+              <Form.Item
+                label="把价(元/把)"
+                name="gamePrice"
+                rules={[{ required: true, message: '请填写把价' }]}
+              >
+                <InputNumber min={0} step={5} style={{ width: '100%' }} />
+              </Form.Item>
+              <Form.Item
+                label="把数"
+                name="gameCount"
+                rules={[{ required: true, message: '请填写把数' }]}
+              >
+                <InputNumber min={1} step={1} style={{ width: '100%' }} />
+              </Form.Item>
+            </>
+          ) : (
+            <Form.Item
+              label="单价(元/小时)"
+              name="hourRate"
+              rules={[{ required: true, message: '请填写单价' }]}
+            >
+              <InputNumber min={0.01} step={5} style={{ width: '100%' }} />
+            </Form.Item>
+          )}
           <Form.Item
             label={renderFieldLabel('计费规则', BILLING_RULE_HELP)}
             name="billingRule"
@@ -1850,13 +2032,32 @@ function OverviewPage() {
               placeholder="选择结束时间"
             />
           </Form.Item>
-          <Form.Item
-            label="单价(元/小时)"
-            name="hourRate"
-            rules={[{ required: true, message: '请填写单价' }]}
-          >
-            <InputNumber min={0.01} step={5} style={{ width: '100%' }} />
-          </Form.Item>
+          {quickCalcBillingRule === 'perGame' ? (
+            <>
+              <Form.Item
+                label="把价(元/把)"
+                name="gamePrice"
+                rules={[{ required: true, message: '请填写把价' }]}
+              >
+                <InputNumber min={0} step={5} style={{ width: '100%' }} />
+              </Form.Item>
+              <Form.Item
+                label="把数"
+                name="gameCount"
+                rules={[{ required: true, message: '请填写把数' }]}
+              >
+                <InputNumber min={1} step={1} style={{ width: '100%' }} />
+              </Form.Item>
+            </>
+          ) : (
+            <Form.Item
+              label="单价(元/小时)"
+              name="hourRate"
+              rules={[{ required: true, message: '请填写单价' }]}
+            >
+              <InputNumber min={0.01} step={5} style={{ width: '100%' }} />
+            </Form.Item>
+          )}
           <Form.Item
             label={renderFieldLabel('计费规则', BILLING_RULE_HELP)}
             name="billingRule"

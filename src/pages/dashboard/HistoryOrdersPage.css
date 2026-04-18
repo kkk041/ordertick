@@ -51,8 +51,19 @@
 .history-status-leading-icon {
   display: inline-flex;
   align-items: center;
-  gap: 6px;
+  gap: 4px;
   color: inherit;
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.history-status-leading-icon .anticon:first-child {
+  flex-shrink: 0;
+}
+
+/* Ensure selection checkbox column has enough space */
+.history-page .ant-table-selection-column {
+  min-width: 48px;
 }
 
 .history-status-leading-icon .anticon {
@@ -108,12 +119,12 @@
   ) !important;
 }
 
-.history-order-row-muted > td:first-child {
+.history-order-row-muted > td:nth-child(2) {
   position: relative;
   padding-left: 26px !important;
 }
 
-.history-order-row-muted > td:first-child::before {
+.history-order-row-muted > td:nth-child(2)::before {
   content: '';
   position: absolute;
   left: 8px;
@@ -131,7 +142,7 @@
     0 4px 10px rgba(100, 116, 139, 0.18);
 }
 
-.history-order-row-muted > td:first-child::after {
+.history-order-row-muted > td:nth-child(2)::after {
   content: '';
   position: absolute;
   left: 17px;
@@ -203,7 +214,7 @@
   ) !important;
 }
 
-:root[data-theme='girl'] .history-order-row-muted > td:first-child::before {
+:root[data-theme='girl'] .history-order-row-muted > td:nth-child(2)::before {
   background: linear-gradient(
     180deg,
     rgba(236, 145, 188, 1) 0%,
@@ -212,7 +223,7 @@
   box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.46);
 }
 
-:root[data-theme='girl'] .history-order-row-muted > td:first-child::after {
+:root[data-theme='girl'] .history-order-row-muted > td:nth-child(2)::after {
   background: rgba(179, 83, 131, 0.72);
 }
 
@@ -250,7 +261,7 @@
   ) !important;
 }
 
-:root[data-theme='dark'] .history-order-row-muted > td:first-child::before {
+:root[data-theme='dark'] .history-order-row-muted > td:nth-child(2)::before {
   background: linear-gradient(
     180deg,
     rgba(165, 180, 205, 1) 0%,
@@ -259,7 +270,7 @@
   box-shadow: 0 0 0 1px rgba(15, 23, 42, 0.42);
 }
 
-:root[data-theme='dark'] .history-order-row-muted > td:first-child::after {
+:root[data-theme='dark'] .history-order-row-muted > td:nth-child(2)::after {
   background: rgba(165, 180, 205, 0.76);
 }
 
