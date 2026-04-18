@@ -64,11 +64,15 @@ FunctionEnd
 
   ${StrRep} $0 "$DataDir" "\" "\\"
 
-  FileOpen $1 "$APPDATA\\ordertick\\app.settings.json" w
-  FileWrite $1 "{$\r$\n"
-  FileWrite $1 "  $\"dataDir$\": $\"$0$\"$\r$\n"
-  FileWrite $1 "}$\r$\n"
-  FileClose $1
+  ; Only write app.settings.json when it does NOT already exist (fresh install).
+  ; On upgrade installs the file is left untouched so user settings survive.
+  ${IfNot} ${FileExists} "$APPDATA\\ordertick\\app.settings.json"
+    FileOpen $1 "$APPDATA\\ordertick\\app.settings.json" w
+    FileWrite $1 "{$\r$\n"
+    FileWrite $1 "  $\"dataDir$\": $\"$0$\"$\r$\n"
+    FileWrite $1 "}$\r$\n"
+    FileClose $1
+  ${EndIf}
 
   ; Also persist a seed copy alongside the installed app so first launch can
   ; recover the chosen directory even if roaming settings were not created.
