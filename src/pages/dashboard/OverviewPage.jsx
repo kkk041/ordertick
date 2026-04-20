@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   Alert,
@@ -6,6 +6,7 @@ import {
   Card,
   Col,
   DatePicker,
+  Descriptions,
   Form,
   Empty,
   Input,
@@ -23,13 +24,15 @@ import {
 } from 'antd'
 import {
   BulbOutlined,
+  CheckCircleOutlined,
   ClockCircleOutlined,
   CopyOutlined,
   DeleteOutlined,
   EditOutlined,
-  ExclamationCircleOutlined,
+  EyeOutlined,
   FileTextOutlined,
   QuestionCircleOutlined,
+  RollbackOutlined,
   SettingOutlined,
 } from '@ant-design/icons'
 import dayjs from 'dayjs'
@@ -47,17 +50,23 @@ import {
   BILLING_RULE_OPTIONS,
   COMMISSION_MODE_OPTIONS,
   DEFAULT_PRICING_CONFIG,
+  getPricingTemplateById,
   getBillingRuleLabel,
   getCommissionAmount,
   getCommissionModeLabel,
+  getUnbilledThresholdMinutes,
+  getUnsettledAgeDays,
   getGrossAmount,
   hasManualActualAmount,
+  isOrderSettled,
   getNetAmount,
   getOrderPricingConfig,
   getSettlementAmount,
-  isTiered15BelowMinimum,
   normalizeBillingRule,
+  normalizeBillingSegments,
   normalizeCommissionMode,
+  normalizeSettlementStatus,
+  shouldOrderTriggerUnsettledReminder,
 } from '../../utils/pricing'
 import './OverviewPage.css'
 
@@ -70,19 +79,6 @@ function formatDateTime(value) {
   return date.toLocaleString('zh-CN', {
     hour12: false,
   })
-}
-
-function formatCompactDateTime(value) {
-  const date = new Date(value)
-  if (Number.isNaN(date.getTime())) {
-    return '-'
-  }
-
-  const month = String(date.getMonth() + 1).padStart(2, '0')
-  const day = String(date.getDate()).padStart(2, '0')
-  const hour = String(date.getHours()).padStart(2, '0')
-  const minute = String(date.getMinutes()).padStart(2, '0')
-  return `${month}-${day} ${hour}:${minute}`
 }
 
 function toDateKey(value) {
@@ -104,19 +100,6 @@ function formatDuration(totalSeconds) {
   const seconds = safeSeconds % 60
 
   return `${hours}小时 ${minutes}分钟 ${seconds}秒`
-}
-
-function formatTableDuration(totalSeconds) {
-  const safeSeconds = Math.max(0, Math.floor(totalSeconds || 0))
-  const hours = Math.floor(safeSeconds / 3600)
-  const minutes = Math.floor((safeSeconds % 3600) / 60)
-  const seconds = safeSeconds % 60
-
-  if (hours > 0) {
-    return `${hours}:${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`
-  }
-
-  return `${minutes}:${String(seconds).padStart(2, '0')}`
 }
 
 function getOrderDurationSeconds(order, nowMs = Date.now()) {
@@ -239,12 +222,27 @@ function getFormDurationSeconds(startValue, endValue) {
   )
 }
 
-function getShortTiered15State({ billingRule, totalSeconds, actualAmount }) {
-  const belowMinimum = isTiered15BelowMinimum(totalSeconds, billingRule)
+function getShortTiered15State({
+  billingRule,
+  billingSegments,
+  totalSeconds,
+  actualAmount,
+}) {
+  const thresholdMinutes = getUnbilledThresholdMinutes(
+    billingRule,
+    billingSegments,
+  )
+  const belowMinimum =
+    thresholdMinutes > 0 &&
+    Math.max(0, Number(totalSeconds || 0)) < thresholdMinutes * 60
   const hasManualActual =
     actualAmount !== null && actualAmount !== undefined && actualAmount !== ''
 
   return {
+    thresholdMinutes,
+    ruleLabel: getBillingRuleLabel(
+      normalizeBillingRule(billingRule, DEFAULT_PRICING_CONFIG.billingRule),
+    ),
     belowMinimum,
     hasManualActual,
     shouldGrayOut: belowMinimum && !hasManualActual,
@@ -252,14 +250,23 @@ function getShortTiered15State({ billingRule, totalSeconds, actualAmount }) {
   }
 }
 
+function buildUnbilledHintText(state) {
+  if (!state?.thresholdMinutes) {
+    return ''
+  }
+  return `${state.ruleLabel}未满${state.thresholdMinutes}分钟`
+}
+
 function renderShortTiered15Notice({
   totalSeconds,
   billingRule,
+  billingSegments,
   actualAmount,
   context = 'active',
 }) {
   const state = getShortTiered15State({
     billingRule,
+    billingSegments,
     totalSeconds,
     actualAmount,
   })
@@ -269,8 +276,8 @@ function renderShortTiered15Notice({
   }
 
   const messageText = state.hasManualActual
-    ? '当前时长未满15分钟，系统结算仍按0处理，到手金额将优先按你手动填写的实际到手金额显示。'
-    : '当前时长未满15分钟，15分钟制下默认不计费。如果老板付款了，请手动填写实际到手金额；不填则会按未计费记录保存并置灰显示。'
+    ? `当前时长${buildUnbilledHintText(state)}，系统结算仍按0处理，到手金额将优先按你手动填写的实际到手金额显示。`
+    : `当前时长${buildUnbilledHintText(state)}，默认不计费。如果老板付款了，请手动填写实际到手金额；不填则会按未计费记录保存并置灰显示。`
 
   const descriptionMap = {
     active: '结束接单后，这条记录会保留在表格里，是否删除由你决定。',
@@ -286,7 +293,7 @@ function renderShortTiered15Notice({
       showIcon
       type={state.hasManualActual ? 'info' : 'warning'}
       className="overview-short-order-alert compact-order-form-span-2"
-      message="15分钟制未满15分钟提醒"
+      message={`${state.ruleLabel}阈值提醒`}
       description={`${messageText} ${descriptionMap[context] || ''}`.trim()}
     />
   )
@@ -294,6 +301,16 @@ function renderShortTiered15Notice({
 
 function formatTableMoneyInteger(value) {
   return Math.round(Number(value || 0))
+}
+
+function getSettlementStatusLabel(order) {
+  return isOrderSettled(order) ? '已结' : '未结'
+}
+
+function getSettlementStatusClass(order) {
+  return isOrderSettled(order)
+    ? 'overview-order-status-pill is-settled'
+    : 'overview-order-status-pill is-unsettled'
 }
 
 function hashString(value) {
@@ -337,24 +354,6 @@ function buildHourlyQuote(copy, seedKey) {
     `${opener}。${mindset}，${focus}。${ending}`,
     `${opener}，别着急，${focus}。${ending}`,
     `${opener}，${mindset}。这会儿就先${trimLeadingConnector(focus)}。${ending}`,
-  ]
-
-  return patterns[hashString(`${seedKey}:pattern`) % patterns.length]
-}
-
-function buildDailyReflectionQuote(copy, seedKey) {
-  if (!copy || typeof copy !== 'object') {
-    return ''
-  }
-
-  const subject = pickSeededItem(copy.subject, `${seedKey}:subject`)
-  const observation = pickSeededItem(copy.observation, `${seedKey}:observation`)
-  const advice = pickSeededItem(copy.advice, `${seedKey}:advice`)
-
-  const patterns = [
-    `${subject}，${observation}${advice}`,
-    `${subject}${observation}${advice}`,
-    `${subject}，说到底${observation}${advice}`,
   ]
 
   return patterns[hashString(`${seedKey}:pattern`) % patterns.length]
@@ -421,6 +420,24 @@ function buildHourlyEncouragement({
   }
 }
 
+function buildDailyReflectionQuote(copy, seedKey) {
+  if (!copy || typeof copy !== 'object') {
+    return ''
+  }
+
+  const subject = pickSeededItem(copy.subject, `${seedKey}:subject`)
+  const observation = pickSeededItem(copy.observation, `${seedKey}:observation`)
+  const advice = pickSeededItem(copy.advice, `${seedKey}:advice`)
+
+  const patterns = [
+    `${subject}，${observation}${advice}`,
+    `${subject}${observation}${advice}`,
+    `${subject}，说到底${observation}${advice}`,
+  ]
+
+  return patterns[hashString(`${seedKey}:pattern`) % patterns.length]
+}
+
 function buildDailyReflection(nowMs, quote) {
   const currentDate = new Date(nowMs)
   const weekLabels = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
@@ -451,6 +468,7 @@ function OverviewPage() {
   const [pricingConfig, setPricingConfig] = useState(DEFAULT_PRICING_CONFIG)
   const [note, setNote] = useState('')
   const [boss, setBoss] = useState('')
+  const [groupName, setGroupName] = useState('')
   const [hourRate, setHourRate] = useState(40)
   const [gamePrice, setGamePrice] = useState(0)
   const [gameCount, setGameCount] = useState(1)
@@ -463,10 +481,36 @@ function OverviewPage() {
   const [commissionValue, setCommissionValue] = useState(
     DEFAULT_PRICING_CONFIG.commissionValue,
   )
+  const [pricingTemplateId, setPricingTemplateId] = useState(
+    DEFAULT_PRICING_CONFIG.pricingTemplateId,
+  )
+  const [pricingTemplates, setPricingTemplates] = useState(
+    DEFAULT_PRICING_CONFIG.pricingTemplates,
+  )
+  const [showDailyEncouragement, setShowDailyEncouragement] = useState(
+    DEFAULT_PRICING_CONFIG.showDailyEncouragement,
+  )
+  const [unsettledReminderEnabled, setUnsettledReminderEnabled] = useState(
+    DEFAULT_PRICING_CONFIG.unsettledReminderEnabled,
+  )
+  const [unsettledReminderDays, setUnsettledReminderDays] = useState(
+    DEFAULT_PRICING_CONFIG.unsettledReminderDays,
+  )
+  const [unsettledReminderMode, setUnsettledReminderMode] = useState(
+    DEFAULT_PRICING_CONFIG.unsettledReminderMode,
+  )
+  const [unsettledReminderMinOrders, setUnsettledReminderMinOrders] = useState(
+    DEFAULT_PRICING_CONFIG.unsettledReminderMinOrders,
+  )
   const [nowMs, setNowMs] = useState(Date.now())
   const [isSupplementOpen, setIsSupplementOpen] = useState(false)
   const [isEditOpen, setIsEditOpen] = useState(false)
   const [isQuickCalcOpen, setIsQuickCalcOpen] = useState(false)
+  const [detailOpen, setDetailOpen] = useState(false)
+  const [detailOrder, setDetailOrder] = useState(null)
+  const [settlementFlashHovered, setSettlementFlashHovered] = useState(false)
+  const [settlementFlashWasHovered, setSettlementFlashWasHovered] =
+    useState(false)
   const [editingOrderId, setEditingOrderId] = useState('')
   const [supplementForm] = Form.useForm()
   const [editForm] = Form.useForm()
@@ -474,14 +518,20 @@ function OverviewPage() {
 
   const supplementStart = Form.useWatch('startAtInput', supplementForm)
   const supplementEnd = Form.useWatch('endAtInput', supplementForm)
+  const supplementTemplateId = Form.useWatch(
+    'pricingTemplateId',
+    supplementForm,
+  )
   const supplementBillingRule = Form.useWatch('billingRule', supplementForm)
   const supplementActualAmount = Form.useWatch('actualAmount', supplementForm)
   const editStart = Form.useWatch('startAtInput', editForm)
   const editEnd = Form.useWatch('endAtInput', editForm)
+  const editTemplateId = Form.useWatch('pricingTemplateId', editForm)
   const editBillingRule = Form.useWatch('billingRule', editForm)
   const editActualAmount = Form.useWatch('actualAmount', editForm)
   const quickCalcStart = Form.useWatch('startAtInput', quickCalcForm)
   const quickCalcEnd = Form.useWatch('endAtInput', quickCalcForm)
+  const quickCalcTemplateId = Form.useWatch('pricingTemplateId', quickCalcForm)
   const quickCalcBillingRule = Form.useWatch('billingRule', quickCalcForm)
   const quickCalcActualAmount = Form.useWatch('actualAmount', quickCalcForm)
 
@@ -498,6 +548,43 @@ function OverviewPage() {
     return getFormDurationSeconds(quickCalcStart, quickCalcEnd)
   }, [quickCalcStart, quickCalcEnd])
 
+  const supplementBillingSegments = buildBillingSegmentsSnapshot(
+    supplementBillingRule,
+    supplementTemplateId || pricingTemplateId,
+  )
+
+  const editBillingSegments = buildBillingSegmentsSnapshot(
+    editBillingRule,
+    editTemplateId || pricingTemplateId,
+  )
+
+  const quickCalcBillingSegments = buildBillingSegmentsSnapshot(
+    quickCalcBillingRule,
+    quickCalcTemplateId || pricingTemplateId,
+  )
+
+  const applyPricingConfigState = useCallback((savedPricingConfig) => {
+    setPricingConfig(savedPricingConfig)
+    setBillingRule(savedPricingConfig.billingRule)
+    setCommissionMode(savedPricingConfig.commissionMode)
+    setCommissionValue(savedPricingConfig.commissionValue)
+    setPricingTemplateId(savedPricingConfig.pricingTemplateId)
+    setPricingTemplates(savedPricingConfig.pricingTemplates)
+    setShowDailyEncouragement(
+      savedPricingConfig.showDailyEncouragement !== false,
+    )
+    setUnsettledReminderEnabled(
+      savedPricingConfig.unsettledReminderEnabled !== false,
+    )
+    setUnsettledReminderDays(savedPricingConfig.unsettledReminderDays || 1)
+    setUnsettledReminderMode(
+      savedPricingConfig.unsettledReminderMode || 'naturalDay',
+    )
+    setUnsettledReminderMinOrders(
+      savedPricingConfig.unsettledReminderMinOrders || 1,
+    )
+  }, [])
+
   useEffect(() => {
     let canceled = false
 
@@ -512,10 +599,7 @@ function OverviewPage() {
 
       setOrders(Array.isArray(payload.orders) ? payload.orders : [])
       setActiveOrder(payload.activeOrder || null)
-      setPricingConfig(savedPricingConfig)
-      setBillingRule(savedPricingConfig.billingRule)
-      setCommissionMode(savedPricingConfig.commissionMode)
-      setCommissionValue(savedPricingConfig.commissionValue)
+      applyPricingConfigState(savedPricingConfig)
       setDataReady(true)
     }
 
@@ -524,7 +608,26 @@ function OverviewPage() {
     return () => {
       canceled = true
     }
-  }, [])
+  }, [applyPricingConfigState])
+
+  useEffect(() => {
+    const syncPricing = async (event) => {
+      if (event?.detail) {
+        applyPricingConfigState(event.detail)
+        return
+      }
+      const latest = await getPricingConfig()
+      applyPricingConfigState(latest)
+    }
+
+    window.addEventListener('pricing-config-updated', syncPricing)
+    window.addEventListener('storage', syncPricing)
+
+    return () => {
+      window.removeEventListener('pricing-config-updated', syncPricing)
+      window.removeEventListener('storage', syncPricing)
+    }
+  }, [applyPricingConfigState])
 
   useEffect(() => {
     if (!dataReady) {
@@ -545,27 +648,26 @@ function OverviewPage() {
     return () => window.clearInterval(timer)
   }, [])
 
-  const settlementHoveredRef = useRef(false)
-
   useEffect(() => {
     if (!settlementFeedback) {
       return undefined
     }
 
-    let elapsed = 0
-    const tick = 200
-    const duration = 8000
-    const timer = window.setInterval(() => {
-      if (!settlementHoveredRef.current) {
-        elapsed += tick
-      }
-      if (elapsed >= duration) {
-        setSettlementFeedback(null)
-      }
-    }, tick)
+    const delay = settlementFlashHovered
+      ? 0
+      : settlementFlashWasHovered
+        ? 1200
+        : 8000
+    if (!delay) {
+      return undefined
+    }
 
-    return () => window.clearInterval(timer)
-  }, [settlementFeedback])
+    const timer = window.setTimeout(() => {
+      setSettlementFeedback(null)
+    }, delay)
+
+    return () => window.clearTimeout(timer)
+  }, [settlementFeedback, settlementFlashHovered, settlementFlashWasHovered])
 
   const todayKey = toDateKey(nowMs)
   const currentHour = new Date(nowMs).getHours()
@@ -637,10 +739,84 @@ function OverviewPage() {
 
     return getShortTiered15State({
       billingRule: activeOrder.billingRule,
+      billingSegments: activeOrder.billingSegments,
       totalSeconds: activeSeconds,
       actualAmount: activeOrder.actualAmount,
     })
   }, [activeOrder, activeSeconds])
+
+  const selectedPricingTemplate = useMemo(() => {
+    return getPricingTemplateById(
+      {
+        ...pricingConfig,
+        pricingTemplates,
+        pricingTemplateId,
+      },
+      pricingTemplateId,
+      pricingConfig,
+    )
+  }, [pricingConfig, pricingTemplateId, pricingTemplates])
+
+  useEffect(() => {
+    if (!selectedPricingTemplate) {
+      return
+    }
+    setBillingRule(selectedPricingTemplate.billingRule)
+    setCommissionMode(selectedPricingTemplate.commissionMode)
+    setCommissionValue(Number(selectedPricingTemplate.commissionValue || 0))
+  }, [selectedPricingTemplate])
+
+  const todaySettledNetIncome = useMemo(() => {
+    return todayOrders.reduce((sum, item) => {
+      if (!isOrderSettled(item)) {
+        return sum
+      }
+      return sum + Number(calcNetAmount(item, nowMs))
+    }, 0)
+  }, [todayOrders, nowMs])
+
+  const todaySettledCount = useMemo(() => {
+    return todayOrders.filter((item) => isOrderSettled(item)).length
+  }, [todayOrders])
+
+  const todayUnsettledCount = useMemo(() => {
+    return todayOrders.filter((item) => !isOrderSettled(item)).length
+  }, [todayOrders])
+
+  const todayUnsettledNetIncome = useMemo(() => {
+    return todayOrders.reduce((sum, item) => {
+      if (isOrderSettled(item)) {
+        return sum
+      }
+      return sum + Number(calcNetAmount(item, nowMs))
+    }, 0)
+  }, [todayOrders, nowMs])
+
+  const overdueUnsettledOrders = useMemo(() => {
+    return orders.filter((item) =>
+      shouldOrderTriggerUnsettledReminder(
+        item,
+        {
+          ...pricingConfig,
+          unsettledReminderEnabled,
+          unsettledReminderDays,
+          unsettledReminderMode,
+        },
+        nowMs,
+      ),
+    )
+  }, [
+    nowMs,
+    orders,
+    pricingConfig,
+    unsettledReminderDays,
+    unsettledReminderEnabled,
+    unsettledReminderMode,
+  ])
+
+  const shouldShowUnsettledReminder =
+    unsettledReminderEnabled &&
+    overdueUnsettledOrders.length >= unsettledReminderMinOrders
 
   const hourlyCopySelection = useMemo(() => {
     const period = getTimePeriod(currentHour)
@@ -675,7 +851,7 @@ function OverviewPage() {
 
   const dailyReflection = useMemo(() => {
     return buildDailyReflection(nowMs, dailyReflectionQuote)
-  }, [dailyReflectionQuote, todayKey])
+  }, [dailyReflectionQuote, nowMs])
 
   const startOrder = () => {
     if (activeOrder) {
@@ -700,14 +876,22 @@ function OverviewPage() {
       startAt: new Date().toISOString(),
       note: note.trim() || '未备注',
       boss: boss.trim() || '',
+      groupName: groupName.trim() || '',
       hourRate: currentBillingRule === 'perGame' ? 0 : ensureHourRate(hourRate),
+      pricingTemplateId,
       billingRule: currentBillingRule,
+      billingSegments: buildBillingSegmentsSnapshot(
+        currentBillingRule,
+        pricingTemplateId,
+      ),
       commissionMode: normalizeCommissionMode(
         commissionMode,
         pricingConfig.commissionMode,
       ),
       commissionValue: Math.max(0, Number(commissionValue || 0)),
       actualAmount: null,
+      settlementStatus: 'unsettled',
+      settledAt: null,
       status: 'running',
       ...(currentBillingRule === 'perGame' && {
         gamePrice: Math.max(0, Number(gamePrice || 0)),
@@ -747,11 +931,20 @@ function OverviewPage() {
       status: 'done',
       note: note.trim() || activeOrder.note || '未备注',
       boss: boss.trim() || activeOrder.boss || '',
+      groupName: groupName.trim() || activeOrder.groupName || '',
       hourRate:
         currentBillingRule === 'perGame'
           ? 0
           : ensureHourRate(hourRate || activeOrder.hourRate),
+      pricingTemplateId,
       billingRule: currentBillingRule,
+      billingSegments:
+        normalizeBillingRule(
+          activeOrder.billingRule,
+          pricingConfig.billingRule,
+        ) === 'customSegment'
+          ? normalizeBillingSegments(activeOrder.billingSegments)
+          : buildBillingSegmentsSnapshot(currentBillingRule, pricingTemplateId),
       commissionMode: normalizeCommissionMode(
         commissionMode || activeOrder.commissionMode,
         pricingConfig.commissionMode,
@@ -761,6 +954,11 @@ function OverviewPage() {
         Number(commissionValue ?? activeOrder.commissionValue ?? 0),
       ),
       actualAmount: normalizeOptionalActualAmount(activeOrder.actualAmount),
+      settlementStatus: normalizeSettlementStatus(
+        activeOrder.settlementStatus,
+        'unsettled',
+      ),
+      settledAt: activeOrder.settledAt || null,
       ...(currentBillingRule === 'perGame' && {
         gamePrice: Math.max(0, Number(gamePrice || activeOrder.gamePrice || 0)),
         gameCount: Math.max(
@@ -779,12 +977,15 @@ function OverviewPage() {
     const netAmount = getNetAmount(endedOrder, endedSeconds)
     const shortTiered15State = getShortTiered15State({
       billingRule: endedOrder.billingRule,
+      billingSegments: endedOrder.billingSegments,
       totalSeconds: endedSeconds,
       actualAmount: endedOrder.actualAmount,
     })
 
     setOrders((prev) => [endedOrder, ...prev])
     setActiveOrder(null)
+    setSettlementFlashHovered(false)
+    setSettlementFlashWasHovered(false)
     setSettlementFeedback({
       id: endedOrder.id,
       durationText: formatDuration(endedSeconds),
@@ -796,7 +997,7 @@ function OverviewPage() {
 
     if (shortTiered15State.shouldGrayOut) {
       message.warning(
-        '这单未满15分钟，已按未计费记录保存；如果老板付款了，请编辑并手动填写实际到手金额。',
+        `这单${buildUnbilledHintText(shortTiered15State)}，已按未计费记录保存；如果老板付款了，请编辑并手动填写实际到手金额。`,
       )
       return
     }
@@ -806,6 +1007,31 @@ function OverviewPage() {
 
   const deleteOrder = (id) => {
     setOrders((prev) => prev.filter((item) => item.id !== id))
+  }
+
+  const toggleOrderSettlementStatus = (id) => {
+    setOrders((prev) =>
+      prev.map((item) => {
+        if (item.id !== id) {
+          return item
+        }
+
+        const nextStatus = isOrderSettled(item) ? 'unsettled' : 'settled'
+        return {
+          ...item,
+          settlementStatus: nextStatus,
+          settledAt:
+            nextStatus === 'settled'
+              ? item.settledAt || new Date().toISOString()
+              : null,
+        }
+      }),
+    )
+  }
+
+  const openDetailModal = (order) => {
+    setDetailOrder(order)
+    setDetailOpen(true)
   }
 
   const handleCopyReport = async (record) => {
@@ -835,6 +1061,27 @@ function OverviewPage() {
     handleCopyReport(latestDone)
   }
 
+  function buildBillingSegmentsSnapshot(ruleValue, templateIdValue) {
+    if (
+      normalizeBillingRule(ruleValue, pricingConfig.billingRule) !==
+      'customSegment'
+    ) {
+      return []
+    }
+
+    const template = getPricingTemplateById(
+      {
+        ...pricingConfig,
+        pricingTemplates,
+        pricingTemplateId,
+      },
+      templateIdValue || pricingTemplateId,
+      pricingConfig,
+    )
+
+    return normalizeBillingSegments(template?.billingSegments)
+  }
+
   const openSupplementModal = () => {
     const end = new Date()
     const start = new Date(end.getTime() - 60 * 60 * 1000)
@@ -842,13 +1089,16 @@ function OverviewPage() {
     supplementForm.setFieldsValue({
       startAtInput: toPickerValue(start.toISOString()),
       endAtInput: toPickerValue(end.toISOString()),
+      pricingTemplateId,
       hourRate: Number(hourRate || 0),
       billingRule,
       commissionMode,
       commissionValue: Number(commissionValue || 0),
       boss: boss.trim() || '',
+      groupName: groupName.trim() || '',
       note: note.trim() || '',
       actualAmount: null,
+      settlementStatus: 'unsettled',
     })
     setIsSupplementOpen(true)
   }
@@ -888,16 +1138,31 @@ function OverviewPage() {
       startAt,
       endAt,
       boss: values.boss?.trim() || '',
+      groupName: values.groupName?.trim() || '',
       note: values.note?.trim() || '补录订单',
       hourRate:
         suppBillingRule === 'perGame' ? 0 : ensureHourRate(values.hourRate),
+      pricingTemplateId: values.pricingTemplateId || pricingTemplateId,
       billingRule: suppBillingRule,
+      billingSegments: buildBillingSegmentsSnapshot(
+        suppBillingRule,
+        values.pricingTemplateId || pricingTemplateId,
+      ),
       commissionMode: normalizeCommissionMode(
         values.commissionMode,
         pricingConfig.commissionMode,
       ),
       commissionValue: Math.max(0, Number(values.commissionValue || 0)),
       actualAmount: normalizeOptionalActualAmount(values.actualAmount),
+      settlementStatus: normalizeSettlementStatus(
+        values.settlementStatus,
+        'unsettled',
+      ),
+      settledAt:
+        normalizeSettlementStatus(values.settlementStatus, 'unsettled') ===
+        'settled'
+          ? new Date().toISOString()
+          : null,
       status: 'done',
       ...(suppBillingRule === 'perGame' && {
         gamePrice: Math.max(0, Number(values.gamePrice || 0)),
@@ -907,6 +1172,7 @@ function OverviewPage() {
 
     const shortTiered15State = getShortTiered15State({
       billingRule: newOrder.billingRule,
+      billingSegments: newOrder.billingSegments,
       totalSeconds: getOrderDurationSeconds(newOrder),
       actualAmount: newOrder.actualAmount,
     })
@@ -916,7 +1182,7 @@ function OverviewPage() {
 
     if (shortTiered15State.shouldGrayOut) {
       message.warning(
-        '这条补录订单未满15分钟，已按未计费记录保存；如果老板付款了，请编辑并手动填写实际到手金额。',
+        `这条补录订单${buildUnbilledHintText(shortTiered15State)}，已按未计费记录保存；如果老板付款了，请编辑并手动填写实际到手金额。`,
       )
       return
     }
@@ -929,6 +1195,7 @@ function OverviewPage() {
     editForm.setFieldsValue({
       startAtInput: toPickerValue(record.startAt),
       endAtInput: toPickerValue(record.endAt),
+      pricingTemplateId: record.pricingTemplateId || '',
       hourRate: Number(record.hourRate || 0),
       billingRule: normalizeBillingRule(
         record.billingRule,
@@ -940,8 +1207,13 @@ function OverviewPage() {
       ),
       commissionValue: Number(record.commissionValue || 0),
       boss: record.boss || '',
+      groupName: record.groupName || '',
       note: record.note || '',
       actualAmount: normalizeOptionalActualAmount(record.actualAmount),
+      settlementStatus: normalizeSettlementStatus(
+        record.settlementStatus,
+        'settled',
+      ),
       gamePrice: Number(record.gamePrice || 0),
       gameCount: Number(record.gameCount || 1),
     })
@@ -989,11 +1261,17 @@ function OverviewPage() {
           startAt,
           endAt,
           boss: values.boss?.trim() || '',
+          groupName: values.groupName?.trim() || '',
           hourRate:
             editBillingRuleVal === 'perGame'
               ? 0
               : ensureHourRate(values.hourRate),
+          pricingTemplateId: values.pricingTemplateId || pricingTemplateId,
           billingRule: editBillingRuleVal,
+          billingSegments: buildBillingSegmentsSnapshot(
+            editBillingRuleVal,
+            values.pricingTemplateId || pricingTemplateId,
+          ),
           commissionMode: normalizeCommissionMode(
             values.commissionMode,
             pricingConfig.commissionMode,
@@ -1001,6 +1279,17 @@ function OverviewPage() {
           commissionValue: Math.max(0, Number(values.commissionValue || 0)),
           note: values.note?.trim() || '未备注',
           actualAmount: normalizeOptionalActualAmount(values.actualAmount),
+          settlementStatus: normalizeSettlementStatus(
+            values.settlementStatus,
+            item.settlementStatus,
+          ),
+          settledAt:
+            normalizeSettlementStatus(
+              values.settlementStatus,
+              item.settlementStatus,
+            ) === 'settled'
+              ? item.settledAt || new Date().toISOString()
+              : null,
           ...(editBillingRuleVal === 'perGame' && {
             gamePrice: Math.max(0, Number(values.gamePrice || 0)),
             gameCount: Math.max(1, Math.round(Number(values.gameCount || 1))),
@@ -1015,6 +1304,10 @@ function OverviewPage() {
 
     const shortTiered15State = getShortTiered15State({
       billingRule: values.billingRule,
+      billingSegments: buildBillingSegmentsSnapshot(
+        editBillingRuleVal,
+        values.pricingTemplateId || pricingTemplateId,
+      ),
       totalSeconds: getFormDurationSeconds(
         values.startAtInput,
         values.endAtInput,
@@ -1027,7 +1320,7 @@ function OverviewPage() {
 
     if (shortTiered15State.shouldGrayOut) {
       message.warning(
-        '这条订单未满15分钟，当前会按未计费记录显示；如果老板付款了，请手动填写实际到手金额。',
+        `这条订单${buildUnbilledHintText(shortTiered15State)}，当前会按未计费记录显示；如果老板付款了，请手动填写实际到手金额。`,
       )
       return
     }
@@ -1042,11 +1335,13 @@ function OverviewPage() {
     quickCalcForm.setFieldsValue({
       startAtInput: toPickerValue(start.toISOString()),
       endAtInput: toPickerValue(end.toISOString()),
+      pricingTemplateId,
       hourRate: Number(hourRate || 0),
       billingRule,
       commissionMode,
       commissionValue: Number(commissionValue || 0),
       actualAmount: null,
+      settlementStatus: 'unsettled',
     })
     setIsQuickCalcOpen(true)
   }
@@ -1086,16 +1381,31 @@ function OverviewPage() {
       startAt,
       endAt,
       boss: '未填写',
+      groupName: '',
       note: '未填写',
       hourRate:
         qcBillingRule === 'perGame' ? 0 : ensureHourRate(values.hourRate),
+      pricingTemplateId: values.pricingTemplateId || pricingTemplateId,
       billingRule: qcBillingRule,
+      billingSegments: buildBillingSegmentsSnapshot(
+        qcBillingRule,
+        values.pricingTemplateId || pricingTemplateId,
+      ),
       commissionMode: normalizeCommissionMode(
         values.commissionMode,
         pricingConfig.commissionMode,
       ),
       commissionValue: Math.max(0, Number(values.commissionValue || 0)),
       actualAmount: normalizeOptionalActualAmount(values.actualAmount),
+      settlementStatus: normalizeSettlementStatus(
+        values.settlementStatus,
+        'unsettled',
+      ),
+      settledAt:
+        normalizeSettlementStatus(values.settlementStatus, 'unsettled') ===
+        'settled'
+          ? new Date().toISOString()
+          : null,
       status: 'done',
       ...(qcBillingRule === 'perGame' && {
         gamePrice: Math.max(0, Number(values.gamePrice || 0)),
@@ -1105,6 +1415,7 @@ function OverviewPage() {
 
     const shortTiered15State = getShortTiered15State({
       billingRule: newOrder.billingRule,
+      billingSegments: newOrder.billingSegments,
       totalSeconds: getOrderDurationSeconds(newOrder),
       actualAmount: newOrder.actualAmount,
     })
@@ -1114,7 +1425,7 @@ function OverviewPage() {
 
     if (shortTiered15State.shouldGrayOut) {
       message.warning(
-        '这条快速补入订单未满15分钟，已按未计费记录保存；如果老板付款了，请手动填写实际到手金额。',
+        `这条快速补入订单${buildUnbilledHintText(shortTiered15State)}，已按未计费记录保存；如果老板付款了，请手动填写实际到手金额。`,
       )
       return
     }
@@ -1124,87 +1435,13 @@ function OverviewPage() {
 
   const columns = [
     {
-      title: '开始时间',
-      dataIndex: 'startAt',
-      key: 'startAt',
-      width: 128,
-      ellipsis: true,
-      render: (value, record) => {
-        const shortState = getShortTiered15State({
-          billingRule: record.billingRule,
-          totalSeconds: getOrderDurationSeconds(record, nowMs),
-          actualAmount: record.actualAmount,
-        })
-
-        const timeNode = (
-          <span className="overview-start-time-text">
-            {formatCompactDateTime(value)}
-          </span>
-        )
-
-        if (!shortState.shouldGrayOut) {
-          return timeNode
-        }
-
-        return (
-          <Tooltip title="未满15分钟，当前按未计费记录保留。">
-            <span className="overview-status-leading-icon">
-              <ExclamationCircleOutlined />
-              {timeNode}
-            </span>
-          </Tooltip>
-        )
-      },
-    },
-    {
-      title: '结束时间',
-      dataIndex: 'endAt',
-      key: 'endAt',
-      width: 128,
-      ellipsis: true,
-      render: (value) => (value ? formatCompactDateTime(value) : '进行中'),
-    },
-    {
-      title: '本单时长',
-      key: 'duration',
-      width: 90,
-      render: (_, record) =>
-        (() => {
-          const seconds = getOrderDurationSeconds(record, nowMs)
-          const shortState = getShortTiered15State({
-            billingRule: record.billingRule,
-            totalSeconds: seconds,
-            actualAmount: record.actualAmount,
-          })
-
-          const durationNode = (
-            <div
-              className={`overview-duration-cell ${
-                shortState.shouldGrayOut ? 'is-muted' : ''
-              }`}
-            >
-              {formatTableDuration(seconds)}
-            </div>
-          )
-
-          if (shortState.shouldGrayOut) {
-            return (
-              <Tooltip title="15分钟制未满15分钟默认不计费；如果老板付款了，请编辑并手动填写实际到手金额。">
-                {durationNode}
-              </Tooltip>
-            )
-          }
-
-          return durationNode
-        })(),
-    },
-    {
-      title: '状态',
+      title: '计费状态',
       key: 'status',
       width: 86,
       render: (_, record) => {
         const shortState = getShortTiered15State({
           billingRule: record.billingRule,
+          billingSegments: record.billingSegments,
           totalSeconds: getOrderDurationSeconds(record, nowMs),
           actualAmount: record.actualAmount,
         })
@@ -1216,8 +1453,48 @@ function OverviewPage() {
         }
 
         return (
-          <Tooltip title="未满15分钟，默认不计费；如果老板付款了，请编辑并手动填写实际到手金额。">
+          <Tooltip
+            title={`${buildUnbilledHintText(shortState)}，默认不计费；如果老板付款了，请编辑并手动填写实际到手金额。`}
+          >
             <span className="overview-order-status-pill is-muted">未计费</span>
+          </Tooltip>
+        )
+      },
+    },
+    {
+      title: '结算',
+      key: 'settlementStatus',
+      width: 82,
+      render: (_, record) => {
+        const settled = isOrderSettled(record)
+        return (
+          <Tooltip
+            title={
+              settled
+                ? `已结算${record.settledAt ? `：${formatDateTime(record.settledAt)}` : ''}`
+                : `未结算，已等待 ${getUnsettledAgeDays(record, nowMs, unsettledReminderMode)} 天`
+            }
+          >
+            <span
+              role="button"
+              tabIndex={0}
+              className={`${getSettlementStatusClass(record)} overview-settlement-clickable overview-row-interactive`}
+              onClick={(event) => {
+                event.stopPropagation()
+                toggleOrderSettlementStatus(record.id)
+              }}
+              onDoubleClick={(event) => {
+                event.stopPropagation()
+              }}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                  event.preventDefault()
+                  toggleOrderSettlementStatus(record.id)
+                }
+              }}
+            >
+              {getSettlementStatusLabel(record)}
+            </span>
           </Tooltip>
         )
       },
@@ -1228,9 +1505,6 @@ function OverviewPage() {
       width: 180,
       render: (_, record) => {
         const isPerGame = record.billingRule === 'perGame'
-        const priceLabel = isPerGame
-          ? `${Number(record.gamePrice || 0)}×${record.gameCount || 0}把`
-          : Number(record.hourRate || 0).toFixed(2)
         const settlementText = Number(
           getSettlementAmount(record, getOrderDurationSeconds(record, nowMs)),
         ).toFixed(2)
@@ -1242,6 +1516,7 @@ function OverviewPage() {
         const hasActualNetOverride = hasManualActualAmount(record)
         const shortState = getShortTiered15State({
           billingRule: pricing.billingRule,
+          billingSegments: pricing.billingSegments,
           totalSeconds: getOrderDurationSeconds(record, nowMs),
           actualAmount: record.actualAmount,
         })
@@ -1278,6 +1553,7 @@ function OverviewPage() {
         const netAmount = Number(calcNetAmount(record, nowMs))
         const shortState = getShortTiered15State({
           billingRule: record.billingRule,
+          billingSegments: record.billingSegments,
           totalSeconds: getOrderDurationSeconds(record, nowMs),
           actualAmount: record.actualAmount,
         })
@@ -1302,6 +1578,17 @@ function OverviewPage() {
       },
     },
     {
+      title: '接单群',
+      dataIndex: 'groupName',
+      key: 'groupName',
+      width: 100,
+      ellipsis: true,
+      render: (value) => {
+        const text = value && value.trim() ? value : '--'
+        return <Tooltip title={text}>{text}</Tooltip>
+      },
+    },
+    {
       title: '备注',
       dataIndex: 'note',
       key: 'note',
@@ -1310,42 +1597,98 @@ function OverviewPage() {
     {
       title: '操作',
       key: 'action',
-      width: 104,
+      width: 136,
       render: (_, record) => (
         <Space size={2}>
-          <Tooltip title="复制报单">
+          <Tooltip title="查看详情" placement="top">
             <Button
               type="text"
               size="small"
-              className="action-icon-btn"
-              icon={<CopyOutlined />}
-              onClick={() => handleCopyReport(record)}
+              className="action-icon-btn overview-row-interactive"
+              icon={<EyeOutlined />}
+              onClick={(event) => {
+                event.stopPropagation()
+                openDetailModal(record)
+              }}
+              onDoubleClick={(event) => {
+                event.stopPropagation()
+              }}
             />
           </Tooltip>
-          <Tooltip title="编辑订单">
+          <Tooltip title="复制报单" placement="top">
             <Button
               type="text"
               size="small"
-              className="action-icon-btn"
+              className="action-icon-btn overview-row-interactive"
+              icon={<CopyOutlined />}
+              onClick={(event) => {
+                event.stopPropagation()
+                handleCopyReport(record)
+              }}
+              onDoubleClick={(event) => {
+                event.stopPropagation()
+              }}
+            />
+          </Tooltip>
+          <Tooltip title="编辑订单" placement="top">
+            <Button
+              type="text"
+              size="small"
+              className="action-icon-btn overview-row-interactive"
               icon={<EditOutlined />}
-              onClick={() => openEditModal(record)}
+              onClick={(event) => {
+                event.stopPropagation()
+                openEditModal(record)
+              }}
+              onDoubleClick={(event) => {
+                event.stopPropagation()
+              }}
+            />
+          </Tooltip>
+          <Tooltip
+            title={isOrderSettled(record) ? '改为未结算' : '标记为已结算'}
+            placement="top"
+          >
+            <Button
+              type="text"
+              size="small"
+              className="action-icon-btn overview-row-interactive"
+              icon={
+                isOrderSettled(record) ? (
+                  <RollbackOutlined />
+                ) : (
+                  <CheckCircleOutlined />
+                )
+              }
+              onClick={(event) => {
+                event.stopPropagation()
+                toggleOrderSettlementStatus(record.id)
+              }}
+              onDoubleClick={(event) => {
+                event.stopPropagation()
+              }}
             />
           </Tooltip>
           <Popconfirm
             title="删除该订单记录？"
             okText="删除"
             cancelText="取消"
+            placement="topRight"
             onConfirm={() => deleteOrder(record.id)}
           >
-            <Tooltip title="删除订单">
-              <Button
-                type="text"
-                size="small"
-                danger
-                className="action-icon-btn"
-                icon={<DeleteOutlined />}
-              />
-            </Tooltip>
+            <Button
+              type="text"
+              size="small"
+              danger
+              className="action-icon-btn overview-row-interactive"
+              icon={<DeleteOutlined />}
+              onClick={(event) => {
+                event.stopPropagation()
+              }}
+              onDoubleClick={(event) => {
+                event.stopPropagation()
+              }}
+            />
           </Popconfirm>
         </Space>
       ),
@@ -1373,8 +1716,15 @@ function OverviewPage() {
               <Tooltip title="自定义报单模板字段、默认值和必填项，跳转到软件设置页配置">
                 <Button
                   icon={<SettingOutlined />}
-                  className="overview-hero-btn is-config"
-                  onClick={() => navigate('/system/app-settings')}
+                  type="primary"
+                  className="overview-hero-btn is-config is-highlight"
+                  onClick={() =>
+                    navigate('/system/app-settings?focus=report-template', {
+                      state: {
+                        slideFromRight: true,
+                      },
+                    })
+                  }
                 >
                   配置报单模板
                   <QuestionCircleOutlined className="overview-hero-btn-help" />
@@ -1383,10 +1733,12 @@ function OverviewPage() {
             </div>
           </div>
           <div className="overview-hero-badges">
-            <span className="overview-hero-badge">{`今日 ${todayOrders.length} 单`}</span>
+            <span className="overview-hero-badge is-key-orders">{`今日单数 ${todayOrders.length} 单`}</span>
             <span className="overview-hero-badge">{`时长 ${formatDuration(todayTotalSeconds)}`}</span>
             <span className="overview-hero-badge">{`预计 ¥${todayExpectedIncome.toFixed(2)}`}</span>
-            <span className="overview-hero-badge is-spotlight">{`到手 ¥${todayActualIncome.toFixed(2)}`}</span>
+            <span className="overview-hero-badge is-spotlight">{`今日到手 ¥${todayActualIncome.toFixed(2)}`}</span>
+            <span className="overview-hero-badge is-key-settled">{`今日已结 ${todaySettledCount} 单 ¥${todaySettledNetIncome.toFixed(2)}`}</span>
+            <span className="overview-hero-badge is-key-unsettled">{`今日未结 ${todayUnsettledCount} 单 ¥${todayUnsettledNetIncome.toFixed(2)}`}</span>
             <span
               className={`overview-hero-badge ${
                 activeOrder ? 'is-live' : 'is-muted'
@@ -1395,6 +1747,15 @@ function OverviewPage() {
               {activeOrder ? '本单计时中' : '当前待开始'}
             </span>
           </div>
+          {shouldShowUnsettledReminder ? (
+            <Alert
+              showIcon
+              type="warning"
+              style={{ marginTop: 10 }}
+              message={`有 ${overdueUnsettledOrders.length} 笔订单超过 ${unsettledReminderDays} 天未结算`}
+              description={`提醒规则：${unsettledReminderMode === 'naturalDay' ? '按自然日' : '按24小时'}，仅在未结订单达到 ${unsettledReminderMinOrders} 笔时提示。建议去历史账单页按“未结算”快速核对。`}
+            />
+          ) : null}
         </div>
 
         <Card
@@ -1412,7 +1773,7 @@ function OverviewPage() {
           className={`overview-timer-card ${activeOrder ? 'is-live' : 'is-idle'}`}
         >
           <Row gutter={[10, 8]} align="middle">
-            <Col xs={24} md={8}>
+            <Col xs={24} md={7}>
               <Typography.Text className="overview-form-label">
                 本单备注
               </Typography.Text>
@@ -1432,6 +1793,17 @@ function OverviewPage() {
                 onChange={(e) => setBoss(e.target.value)}
                 placeholder="可不填"
                 maxLength={20}
+              />
+            </Col>
+            <Col xs={24} md={4}>
+              <Typography.Text className="overview-form-label">
+                接单群(选填)
+              </Typography.Text>
+              <Input
+                value={groupName}
+                onChange={(e) => setGroupName(e.target.value)}
+                placeholder="例如：QQ群A"
+                maxLength={30}
               />
             </Col>
             <Col xs={24} md={4}>
@@ -1482,32 +1854,6 @@ function OverviewPage() {
                 />
               </Col>
             )}
-            <Col xs={24} md={8}>
-              <Typography.Text className="overview-form-label">
-                本单进行时长
-              </Typography.Text>
-              <div
-                className={`run-duration ${activeOrder ? 'is-live' : 'is-idle'}`}
-              >
-                <span className="run-duration-state">
-                  {activeOrder ? '实时累计中' : '等待开始'}
-                </span>
-                <span className="run-duration-value">
-                  {formatDuration(activeSeconds)}
-                </span>
-                {activeOrder ? (
-                  <div className="run-duration-metrics">
-                    <span>{`预计 ¥${activeOrderExpectedIncome.toFixed(2)}`}</span>
-                    <span>{`抽成 ¥${activeOrderCommission.toFixed(2)}`}</span>
-                    <span className="is-net">{`到手 ¥${activeOrderNetIncome.toFixed(2)}`}</span>
-                  </div>
-                ) : (
-                  <span className="run-duration-hint">
-                    开始接单后，这里会实时突出本单时长和到手金额。
-                  </span>
-                )}
-              </div>
-            </Col>
           </Row>
 
           <Space style={{ marginTop: 10, marginBottom: 6 }}>
@@ -1557,10 +1903,11 @@ function OverviewPage() {
                 settlementFeedback.isShortTiered15Unbilled ? 'is-muted' : ''
               }`}
               onMouseEnter={() => {
-                settlementHoveredRef.current = true
+                setSettlementFlashHovered(true)
+                setSettlementFlashWasHovered(true)
               }}
               onMouseLeave={() => {
-                settlementHoveredRef.current = false
+                setSettlementFlashHovered(false)
               }}
             >
               <span className="overview-settlement-flash-kicker">
@@ -1589,98 +1936,133 @@ function OverviewPage() {
             </div>
           ) : null}
 
-          <div className="overview-secondary-fields">
-            <Typography.Text
-              type="secondary"
-              className="overview-secondary-label"
-            >
-              计费设置
-            </Typography.Text>
-            <Row gutter={[8, 6]}>
-              <Col xs={12} md={6}>
-                <Typography.Text className="overview-form-label-sm">
-                  {renderFieldLabel('计费规则', BILLING_RULE_HELP)}
-                </Typography.Text>
-                <Select
-                  size="small"
-                  value={billingRule}
-                  options={BILLING_RULE_OPTIONS}
-                  onChange={setBillingRule}
-                />
-              </Col>
-              <Col xs={12} md={6}>
-                <Typography.Text className="overview-form-label-sm">
-                  {renderFieldLabel('抽成方式', COMMISSION_MODE_HELP)}
-                </Typography.Text>
-                <Select
-                  size="small"
-                  value={commissionMode}
-                  options={COMMISSION_MODE_OPTIONS}
-                  onChange={setCommissionMode}
-                />
-              </Col>
-              <Col xs={12} md={6}>
-                <Typography.Text className="overview-form-label-sm">
-                  {renderFieldLabel(
-                    commissionMode === 'fixed'
-                      ? '每小时抽成(元)'
-                      : '抽成比例(%)',
-                    COMMISSION_VALUE_HELP,
-                  )}
-                </Typography.Text>
-                <InputNumber
-                  size="small"
-                  value={commissionValue}
-                  min={0}
-                  step={commissionMode === 'fixed' ? 1 : 5}
-                  style={{ width: '100%' }}
-                  onChange={(value) => setCommissionValue(Number(value || 0))}
-                />
-              </Col>
-              <Col xs={12} md={6}>
-                <Typography.Text className="overview-form-label-sm">
-                  {renderFieldLabel(
-                    '实际到手(选填)',
-                    '如果这单最终到手和系统计算结果不一致，可以手动填写实际收到的金额；填写后，到手金额将优先按这里显示。',
-                  )}
-                </Typography.Text>
-                <InputNumber
-                  size="small"
-                  value={
-                    activeOrder ? (activeOrder.actualAmount ?? null) : null
-                  }
-                  min={0}
-                  step={1}
-                  disabled={!activeOrder}
-                  style={{ width: '100%' }}
-                  placeholder={activeOrder ? '可手动修正' : '接单后可填'}
-                  onChange={(value) => {
-                    if (!activeOrder) {
-                      return
-                    }
-                    setActiveOrder((prev) => {
-                      if (!prev) {
-                        return prev
-                      }
-                      return {
-                        ...prev,
-                        actualAmount: normalizeOptionalActualAmount(value),
-                      }
-                    })
-                  }}
-                />
-              </Col>
-            </Row>
-            {activeOrder && activeShortTiered15State.belowMinimum ? (
-              <div style={{ marginTop: 4 }}>
-                {renderShortTiered15Notice({
-                  totalSeconds: activeSeconds,
-                  billingRule: activeOrder.billingRule,
-                  actualAmount: activeOrder.actualAmount,
-                  context: 'active',
-                })}
+          <div className="overview-timer-bottom-layout">
+            <div className="overview-timer-wait-panel">
+              <Typography.Text
+                type="secondary"
+                className="overview-secondary-label"
+              >
+                {activeOrder ? '本单进行时长' : '等待开始'}
+              </Typography.Text>
+              <div
+                className={`run-duration ${activeOrder ? 'is-live' : 'is-idle'}`}
+              >
+                <span className="run-duration-state">
+                  {activeOrder ? '实时累计中' : '等待开始'}
+                </span>
+                <span className="run-duration-value">
+                  {formatDuration(activeSeconds)}
+                </span>
+                {activeOrder ? (
+                  <div className="run-duration-metrics">
+                    <span>{`预计 ¥${activeOrderExpectedIncome.toFixed(2)}`}</span>
+                    <span>{`抽成 ¥${activeOrderCommission.toFixed(2)}`}</span>
+                    <span className="is-net">{`到手 ¥${activeOrderNetIncome.toFixed(2)}`}</span>
+                  </div>
+                ) : (
+                  <span className="run-duration-hint">
+                    开始接单后，这里会实时突出本单时长和到手金额。
+                  </span>
+                )}
               </div>
-            ) : null}
+            </div>
+
+            <div className="overview-secondary-fields">
+              <Typography.Text
+                type="secondary"
+                className="overview-secondary-label"
+              >
+                计费设置
+              </Typography.Text>
+              <Row gutter={[8, 6]}>
+                <Col xs={12} md={8}>
+                  <Typography.Text className="overview-form-label-sm">
+                    {renderFieldLabel('计费规则', BILLING_RULE_HELP)}
+                  </Typography.Text>
+                  <Select
+                    size="small"
+                    value={billingRule}
+                    options={BILLING_RULE_OPTIONS}
+                    onChange={setBillingRule}
+                    popupMatchSelectWidth={320}
+                  />
+                </Col>
+                <Col xs={12} md={8}>
+                  <Typography.Text className="overview-form-label-sm">
+                    {renderFieldLabel('抽成方式', COMMISSION_MODE_HELP)}
+                  </Typography.Text>
+                  <Select
+                    size="small"
+                    value={commissionMode}
+                    options={COMMISSION_MODE_OPTIONS}
+                    onChange={setCommissionMode}
+                    popupMatchSelectWidth={320}
+                  />
+                </Col>
+                <Col xs={12} md={8}>
+                  <Typography.Text className="overview-form-label-sm">
+                    {renderFieldLabel(
+                      commissionMode === 'fixed'
+                        ? '每小时抽成(元)'
+                        : '抽成比例(%)',
+                      COMMISSION_VALUE_HELP,
+                    )}
+                  </Typography.Text>
+                  <InputNumber
+                    size="small"
+                    value={commissionValue}
+                    min={0}
+                    step={commissionMode === 'fixed' ? 1 : 5}
+                    style={{ width: '100%' }}
+                    onChange={(value) => setCommissionValue(Number(value || 0))}
+                  />
+                </Col>
+                <Col xs={12} md={16}>
+                  <Typography.Text className="overview-form-label-sm">
+                    {renderFieldLabel(
+                      '实际到手(选填)',
+                      '如果这单最终到手和系统计算结果不一致，可以手动填写实际收到的金额；填写后，到手金额将优先按这里显示。',
+                    )}
+                  </Typography.Text>
+                  <InputNumber
+                    size="small"
+                    value={
+                      activeOrder ? (activeOrder.actualAmount ?? null) : null
+                    }
+                    min={0}
+                    step={1}
+                    disabled={!activeOrder}
+                    style={{ width: '100%' }}
+                    placeholder={activeOrder ? '可手动修正' : '接单后可填'}
+                    onChange={(value) => {
+                      if (!activeOrder) {
+                        return
+                      }
+                      setActiveOrder((prev) => {
+                        if (!prev) {
+                          return prev
+                        }
+                        return {
+                          ...prev,
+                          actualAmount: normalizeOptionalActualAmount(value),
+                        }
+                      })
+                    }}
+                  />
+                </Col>
+              </Row>
+              {activeOrder && activeShortTiered15State.belowMinimum ? (
+                <div style={{ marginTop: 4 }}>
+                  {renderShortTiered15Notice({
+                    totalSeconds: activeSeconds,
+                    billingRule: activeOrder.billingRule,
+                    billingSegments: activeOrder.billingSegments,
+                    actualAmount: activeOrder.actualAmount,
+                    context: 'active',
+                  })}
+                </div>
+              ) : null}
+            </div>
           </div>
         </Card>
 
@@ -1708,6 +2090,7 @@ function OverviewPage() {
                 rowClassName={(record) => {
                   const shortState = getShortTiered15State({
                     billingRule: record.billingRule,
+                    billingSegments: record.billingSegments,
                     totalSeconds: getOrderDurationSeconds(record, nowMs),
                     actualAmount: record.actualAmount,
                   })
@@ -1716,6 +2099,18 @@ function OverviewPage() {
                     ? 'overview-order-row-muted'
                     : ''
                 }}
+                onRow={(record) => ({
+                  onDoubleClick: (event) => {
+                    const target = event.target
+                    if (
+                      target instanceof HTMLElement &&
+                      target.closest('.overview-row-interactive')
+                    ) {
+                      return
+                    }
+                    openDetailModal(record)
+                  },
+                })}
                 pagination={{
                   pageSize: 8,
                   showSizeChanger: false,
@@ -1726,50 +2121,52 @@ function OverviewPage() {
           )}
         </Card>
 
-        <Card
-          title={renderOverviewPanelTitle(<BulbOutlined />, '今日打气')}
-          extra={
-            <span className="overview-panel-status is-accent">
-              {hourlyEncouragement.periodLabel}
-            </span>
-          }
-          className="overview-encourage-card overview-surface-card"
-          size="small"
-        >
-          <div className="overview-encourage-panel">
-            <div
-              className={`overview-encourage-block is-${hourlyEncouragement.period}`}
-            >
-              <div className="overview-encourage-meta">
-                <span className="overview-encourage-kicker">
-                  {hourlyEncouragement.title}
-                </span>
-                <span className="overview-encourage-period">
-                  {hourlyEncouragement.periodLabel}
-                </span>
-              </div>
-              <Typography.Text className="overview-encourage-subcopy">
-                {hourlyEncouragement.message}
-              </Typography.Text>
-              <Typography.Text type="secondary">
-                {hourlyEncouragement.footer}
-              </Typography.Text>
-            </div>
-
-            <div
-              key={dailyReflection.key}
-              className="overview-daily-quote-card"
-            >
-              <span className="overview-daily-quote-kicker">
-                {dailyReflection.title}
+        {showDailyEncouragement ? (
+          <Card
+            title={renderOverviewPanelTitle(<BulbOutlined />, '今日打气')}
+            extra={
+              <span className="overview-panel-status is-accent">
+                {hourlyEncouragement.periodLabel}
               </span>
-              <blockquote>{dailyReflection.quote}</blockquote>
-              <Typography.Text type="secondary">
-                {dailyReflection.note}
-              </Typography.Text>
+            }
+            className="overview-encourage-card overview-surface-card"
+            size="small"
+          >
+            <div className="overview-encourage-panel">
+              <div
+                className={`overview-encourage-block is-${hourlyEncouragement.period}`}
+              >
+                <div className="overview-encourage-meta">
+                  <span className="overview-encourage-kicker">
+                    {hourlyEncouragement.title}
+                  </span>
+                  <span className="overview-encourage-period">
+                    {hourlyEncouragement.periodLabel}
+                  </span>
+                </div>
+                <Typography.Text className="overview-encourage-subcopy">
+                  {hourlyEncouragement.message}
+                </Typography.Text>
+                <Typography.Text type="secondary">
+                  {hourlyEncouragement.footer}
+                </Typography.Text>
+              </div>
+
+              <div
+                key={dailyReflection.key}
+                className="overview-daily-quote-card"
+              >
+                <span className="overview-daily-quote-kicker">
+                  {dailyReflection.title}
+                </span>
+                <blockquote>{dailyReflection.quote}</blockquote>
+                <Typography.Text type="secondary">
+                  {dailyReflection.note}
+                </Typography.Text>
+              </div>
             </div>
-          </div>
-        </Card>
+          </Card>
+        ) : null}
       </div>
 
       <Modal
@@ -1777,7 +2174,7 @@ function OverviewPage() {
         open={isSupplementOpen}
         okText="保存补录"
         cancelText="取消"
-        width={720}
+        width={660}
         className="supplement-order-modal"
         onCancel={() => setIsSupplementOpen(false)}
         onOk={submitSupplement}
@@ -1785,7 +2182,7 @@ function OverviewPage() {
         <Form
           layout="vertical"
           form={supplementForm}
-          className="compact-order-form"
+          className="compact-order-form compact-order-form-tight"
         >
           <Form.Item
             label="开始时间"
@@ -1841,13 +2238,19 @@ function OverviewPage() {
             label={renderFieldLabel('计费规则', BILLING_RULE_HELP)}
             name="billingRule"
           >
-            <Select options={BILLING_RULE_OPTIONS} />
+            <Select
+              options={BILLING_RULE_OPTIONS}
+              popupMatchSelectWidth={320}
+            />
           </Form.Item>
           <Form.Item
             label={renderFieldLabel('抽成方式', COMMISSION_MODE_HELP)}
             name="commissionMode"
           >
-            <Select options={COMMISSION_MODE_OPTIONS} />
+            <Select
+              options={COMMISSION_MODE_OPTIONS}
+              popupMatchSelectWidth={320}
+            />
           </Form.Item>
           <Form.Item
             label={renderFieldLabel('抽成数值', COMMISSION_VALUE_HELP)}
@@ -1857,6 +2260,17 @@ function OverviewPage() {
           </Form.Item>
           <Form.Item label="老板(选填)" name="boss">
             <Input maxLength={20} placeholder="例如：张总" />
+          </Form.Item>
+          <Form.Item label="接单群(选填)" name="groupName">
+            <Input maxLength={30} placeholder="例如：某某车队群" />
+          </Form.Item>
+          <Form.Item label="结算状态" name="settlementStatus">
+            <Select
+              options={[
+                { value: 'unsettled', label: '未结算' },
+                { value: 'settled', label: '已结算' },
+              ]}
+            />
           </Form.Item>
           <Form.Item
             label={renderFieldLabel(
@@ -1877,6 +2291,7 @@ function OverviewPage() {
           {renderShortTiered15Notice({
             totalSeconds: supplementSeconds,
             billingRule: supplementBillingRule,
+            billingSegments: supplementBillingSegments,
             actualAmount: supplementActualAmount,
             context: 'supplement',
           })}
@@ -1951,13 +2366,19 @@ function OverviewPage() {
             label={renderFieldLabel('计费规则', BILLING_RULE_HELP)}
             name="billingRule"
           >
-            <Select options={BILLING_RULE_OPTIONS} />
+            <Select
+              options={BILLING_RULE_OPTIONS}
+              popupMatchSelectWidth={320}
+            />
           </Form.Item>
           <Form.Item
             label={renderFieldLabel('抽成方式', COMMISSION_MODE_HELP)}
             name="commissionMode"
           >
-            <Select options={COMMISSION_MODE_OPTIONS} />
+            <Select
+              options={COMMISSION_MODE_OPTIONS}
+              popupMatchSelectWidth={320}
+            />
           </Form.Item>
           <Form.Item
             label={renderFieldLabel('抽成数值', COMMISSION_VALUE_HELP)}
@@ -1967,6 +2388,17 @@ function OverviewPage() {
           </Form.Item>
           <Form.Item label="老板(选填)" name="boss">
             <Input maxLength={20} placeholder="例如：张总" />
+          </Form.Item>
+          <Form.Item label="接单群(选填)" name="groupName">
+            <Input maxLength={30} placeholder="例如：某某车队群" />
+          </Form.Item>
+          <Form.Item label="结算状态" name="settlementStatus">
+            <Select
+              options={[
+                { value: 'unsettled', label: '未结算' },
+                { value: 'settled', label: '已结算' },
+              ]}
+            />
           </Form.Item>
           <Form.Item
             label={renderFieldLabel(
@@ -1987,6 +2419,7 @@ function OverviewPage() {
           {renderShortTiered15Notice({
             totalSeconds: editSeconds,
             billingRule: editBillingRule,
+            billingSegments: editBillingSegments,
             actualAmount: editActualAmount,
             context: 'edit',
           })}
@@ -1998,7 +2431,7 @@ function OverviewPage() {
         open={isQuickCalcOpen}
         okText="确认补入"
         cancelText="取消"
-        width={720}
+        width={660}
         className="quick-calc-modal"
         onCancel={() => setIsQuickCalcOpen(false)}
         onOk={submitQuickCalc}
@@ -2006,7 +2439,7 @@ function OverviewPage() {
         <Form
           layout="vertical"
           form={quickCalcForm}
-          className="compact-order-form"
+          className="compact-order-form compact-order-form-tight"
         >
           <Form.Item
             label="开始时间"
@@ -2062,13 +2495,19 @@ function OverviewPage() {
             label={renderFieldLabel('计费规则', BILLING_RULE_HELP)}
             name="billingRule"
           >
-            <Select options={BILLING_RULE_OPTIONS} />
+            <Select
+              options={BILLING_RULE_OPTIONS}
+              popupMatchSelectWidth={320}
+            />
           </Form.Item>
           <Form.Item
             label={renderFieldLabel('抽成方式', COMMISSION_MODE_HELP)}
             name="commissionMode"
           >
-            <Select options={COMMISSION_MODE_OPTIONS} />
+            <Select
+              options={COMMISSION_MODE_OPTIONS}
+              popupMatchSelectWidth={320}
+            />
           </Form.Item>
           <Form.Item
             label={renderFieldLabel('抽成数值', COMMISSION_VALUE_HELP)}
@@ -2085,6 +2524,14 @@ function OverviewPage() {
           >
             <InputNumber min={0} step={1} style={{ width: '100%' }} />
           </Form.Item>
+          <Form.Item label="结算状态" name="settlementStatus">
+            <Select
+              options={[
+                { value: 'unsettled', label: '未结算' },
+                { value: 'settled', label: '已结算' },
+              ]}
+            />
+          </Form.Item>
           <div className="quick-calc-result compact-order-form-span-2">
             计算时长：
             {quickCalcSeconds > 0
@@ -2094,6 +2541,7 @@ function OverviewPage() {
           {renderShortTiered15Notice({
             totalSeconds: quickCalcSeconds,
             billingRule: quickCalcBillingRule,
+            billingSegments: quickCalcBillingSegments,
             actualAmount: quickCalcActualAmount,
             context: 'quick',
           })}
@@ -2104,6 +2552,69 @@ function OverviewPage() {
             确认后将直接写入表格，老板/备注/金额等字段默认“未填写”，后续可编辑补全。
           </Typography.Text>
         </Form>
+      </Modal>
+
+      <Modal
+        title="订单详情"
+        open={detailOpen}
+        footer={null}
+        width={760}
+        onCancel={() => setDetailOpen(false)}
+      >
+        {detailOrder ? (
+          <Descriptions bordered size="small" column={2}>
+            <Descriptions.Item label="开始时间" span={1}>
+              {formatDateTime(detailOrder.startAt)}
+            </Descriptions.Item>
+            <Descriptions.Item label="结束时间" span={1}>
+              {detailOrder.endAt ? formatDateTime(detailOrder.endAt) : '进行中'}
+            </Descriptions.Item>
+            <Descriptions.Item label="时长" span={1}>
+              {formatDuration(getOrderDurationSeconds(detailOrder, nowMs))}
+            </Descriptions.Item>
+            <Descriptions.Item label="结算状态" span={1}>
+              {isOrderSettled(detailOrder) ? '已结算' : '未结算'}
+            </Descriptions.Item>
+            <Descriptions.Item label="老板" span={1}>
+              {detailOrder.boss || '--'}
+            </Descriptions.Item>
+            <Descriptions.Item label="接单群" span={1}>
+              {detailOrder.groupName || '--'}
+            </Descriptions.Item>
+            <Descriptions.Item label="计费规则" span={1}>
+              {getBillingRuleLabel(detailOrder.billingRule)}
+            </Descriptions.Item>
+            <Descriptions.Item label="抽成方式" span={1}>
+              {getCommissionModeLabel(detailOrder.commissionMode)}
+            </Descriptions.Item>
+            <Descriptions.Item label="单价/把价" span={1}>
+              {detailOrder.billingRule === 'perGame'
+                ? `${Number(detailOrder.gamePrice || 0)} 元/把 × ${Number(
+                    detailOrder.gameCount || 1,
+                  )} 把`
+                : `${Number(detailOrder.hourRate || 0).toFixed(2)} 元/小时`}
+            </Descriptions.Item>
+            <Descriptions.Item label="抽成数值" span={1}>
+              {detailOrder.commissionMode === 'fixed'
+                ? `${Number(detailOrder.commissionValue || 0).toFixed(2)} 元/小时`
+                : `${Number(detailOrder.commissionValue || 0).toFixed(2)} %`}
+            </Descriptions.Item>
+            <Descriptions.Item label="结算金额" span={1}>
+              {`¥ ${Number(
+                getSettlementAmount(
+                  detailOrder,
+                  getOrderDurationSeconds(detailOrder, nowMs),
+                ),
+              ).toFixed(2)}`}
+            </Descriptions.Item>
+            <Descriptions.Item label="到手金额" span={1}>
+              {`¥ ${Number(calcNetAmount(detailOrder, nowMs)).toFixed(2)}`}
+            </Descriptions.Item>
+            <Descriptions.Item label="备注" span={2}>
+              {detailOrder.note || '--'}
+            </Descriptions.Item>
+          </Descriptions>
+        ) : null}
       </Modal>
     </section>
   )

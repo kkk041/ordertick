@@ -3,6 +3,7 @@ import {
   Button,
   Card,
   DatePicker,
+  Descriptions,
   Form,
   Input,
   InputNumber,
@@ -17,13 +18,15 @@ import {
   message,
 } from 'antd'
 import {
+  CheckCircleOutlined,
   CopyOutlined,
   DownloadOutlined,
   DeleteOutlined,
   EditOutlined,
-  ExclamationCircleOutlined,
+  EyeOutlined,
   FileExcelOutlined,
   ReloadOutlined,
+  RollbackOutlined,
   UploadOutlined,
 } from '@ant-design/icons'
 import dayjs from 'dayjs'
@@ -31,20 +34,29 @@ import * as XLSX from 'xlsx'
 import {
   loadOrdersData,
   saveOrdersData,
+  getPricingConfig,
   loadReportTemplate,
   loadReportFields,
   generateReportText,
 } from '../../utils/orderStorage'
 import {
+  applyPricingTemplate,
   BILLING_RULE_OPTIONS,
   COMMISSION_MODE_OPTIONS,
+  getBillingRuleLabel,
+  getPricingTemplateById,
+  getUnbilledThresholdMinutes,
+  getUnsettledAgeDays,
   getCommissionAmount,
   getNetAmount,
   getSettlementAmount,
   hasManualActualAmount,
-  isTiered15BelowMinimum,
+  isOrderSettled,
   normalizeBillingRule,
   normalizeCommissionMode,
+  normalizeSettlementStatus,
+  shouldOrderTriggerUnsettledReminder,
+  DEFAULT_PRICING_CONFIG,
 } from '../../utils/pricing'
 import './HistoryOrdersPage.css'
 
@@ -132,7 +144,11 @@ function parseExcelDate(value) {
   return asDate.toISOString()
 }
 
-function normalizeImportedOrder(row, idx) {
+function normalizeImportedOrder(
+  row,
+  idx,
+  pricingConfig = DEFAULT_PRICING_CONFIG,
+) {
   const startAt = parseExcelDate(row.startAt ?? row['开始时间'])
   const endAt = parseExcelDate(row.endAt ?? row['结束时间'])
   if (!startAt || !endAt || new Date(endAt) <= new Date(startAt)) {
@@ -143,6 +159,8 @@ function normalizeImportedOrder(row, idx) {
   const actualRaw = row.actualAmount ?? row['实际到手'] ?? row['实际金额']
   const noteRaw = row.note ?? row['备注']
   const bossRaw = row.boss ?? row['老板']
+  const groupRaw = row.groupName ?? row['接单群']
+  const settlementRaw = row.settlementStatus ?? row['结算状态']
 
   const hourRate = Number(hourRateRaw || 0)
   const actualAmount =
@@ -150,17 +168,39 @@ function normalizeImportedOrder(row, idx) {
       ? null
       : Number(actualRaw)
 
+  const template = getPricingTemplateById(
+    pricingConfig,
+    pricingConfig.pricingTemplateId,
+    pricingConfig,
+  )
+  const withTemplate = applyPricingTemplate({}, template)
+  const settlementStatusText = String(settlementRaw || '').trim()
+  const settlementStatus =
+    settlementStatusText === '已结算' || settlementStatusText === '已结'
+      ? 'settled'
+      : settlementStatusText === '未结算' || settlementStatusText === '未结'
+        ? 'unsettled'
+        : 'unsettled'
+
   return {
     id: `import-${Date.now()}-${idx}`,
     startAt,
     endAt,
     boss: String(bossRaw || '').trim(),
+    groupName: String(groupRaw || '').trim(),
     note: String(noteRaw || '').trim() || '未填写',
+    pricingTemplateId: withTemplate.pricingTemplateId,
+    billingRule: withTemplate.billingRule,
+    billingSegments: withTemplate.billingSegments,
+    commissionMode: withTemplate.commissionMode,
+    commissionValue: withTemplate.commissionValue,
     hourRate: Number.isFinite(hourRate) ? hourRate : 0,
     actualAmount:
       actualAmount === null || Number.isFinite(actualAmount)
         ? actualAmount
         : null,
+    settlementStatus,
+    settledAt: settlementStatus === 'settled' ? new Date().toISOString() : null,
     status: 'done',
   }
 }
@@ -178,13 +218,33 @@ function formatOrderStatus(status) {
 function getShortTiered15State(order) {
   const totalSeconds = getOrderDurationSeconds(order)
   const actualAmount = order?.actualAmount
-  const belowMinimum = isTiered15BelowMinimum(totalSeconds, order?.billingRule)
+  const thresholdMinutes = getUnbilledThresholdMinutes(
+    order?.billingRule,
+    order?.billingSegments,
+  )
+  const belowMinimum =
+    thresholdMinutes > 0 &&
+    Math.max(0, Number(totalSeconds || 0)) < thresholdMinutes * 60
   const hasManualActual =
     actualAmount !== null && actualAmount !== undefined && actualAmount !== ''
 
   return {
+    thresholdMinutes,
+    ruleLabel: getBillingRuleLabel(
+      normalizeBillingRule(
+        order?.billingRule,
+        DEFAULT_PRICING_CONFIG.billingRule,
+      ),
+    ),
     shouldGrayOut: belowMinimum && !hasManualActual,
   }
+}
+
+function buildUnbilledHintText(state) {
+  if (!state?.thresholdMinutes) {
+    return '未达到计费阈值'
+  }
+  return `${state.ruleLabel}未满${state.thresholdMinutes}分钟`
 }
 
 function getDisplayedNetAmount(order) {
@@ -213,6 +273,8 @@ function HistoryOrdersPage() {
   const [activeOrder, setActiveOrder] = useState(null)
   const [keyword, setKeyword] = useState('')
   const [loading, setLoading] = useState(false)
+  const [pricingConfig, setPricingConfig] = useState(DEFAULT_PRICING_CONFIG)
+  const [settlementFilter, setSettlementFilter] = useState('all')
   const [importPreviewOpen, setImportPreviewOpen] = useState(false)
   const [importPreviewRows, setImportPreviewRows] = useState([])
   const [importInvalidCount, setImportInvalidCount] = useState(0)
@@ -221,19 +283,25 @@ function HistoryOrdersPage() {
   const [selectedRowKeys, setSelectedRowKeys] = useState([])
   const [editOpen, setEditOpen] = useState(false)
   const [editingOrderId, setEditingOrderId] = useState('')
+  const [detailOpen, setDetailOpen] = useState(false)
+  const [detailOrder, setDetailOrder] = useState(null)
   const [editForm] = Form.useForm()
   const editBillingRule = Form.useWatch('billingRule', editForm)
 
   const refresh = async () => {
     setLoading(true)
     try {
-      const payload = await loadOrdersData()
+      const [payload, config] = await Promise.all([
+        loadOrdersData(),
+        getPricingConfig(),
+      ])
       const normalized = Array.isArray(payload.orders) ? payload.orders : []
       normalized.sort(
         (a, b) => new Date(b.startAt).getTime() - new Date(a.startAt).getTime(),
       )
       setOrders(normalized)
       setActiveOrder(payload.activeOrder || null)
+      setPricingConfig(config)
       setSelectedRowKeys([])
     } finally {
       setLoading(false)
@@ -246,14 +314,22 @@ function HistoryOrdersPage() {
 
   const filteredOrders = useMemo(() => {
     const key = keyword.trim().toLowerCase()
-    if (!key) {
-      return orders
-    }
-
     return orders.filter((item) => {
+      if (settlementFilter === 'settled' && !isOrderSettled(item)) {
+        return false
+      }
+      if (settlementFilter === 'unsettled' && isOrderSettled(item)) {
+        return false
+      }
+
+      if (!key) {
+        return true
+      }
+
       const text = [
         item.id,
         item.boss,
+        item.groupName,
         item.note,
         item.status,
         formatDateTime(item.startAt),
@@ -263,7 +339,39 @@ function HistoryOrdersPage() {
         .toLowerCase()
       return text.includes(key)
     })
-  }, [orders, keyword])
+  }, [orders, keyword, settlementFilter])
+
+  const settledAmount = useMemo(() => {
+    return filteredOrders.reduce((sum, item) => {
+      if (!isOrderSettled(item)) {
+        return sum
+      }
+      return sum + Number(getDisplayedNetAmount(item) || 0)
+    }, 0)
+  }, [filteredOrders])
+
+  const unsettledAmount = useMemo(() => {
+    return filteredOrders.reduce((sum, item) => {
+      if (isOrderSettled(item)) {
+        return sum
+      }
+      return sum + Number(getDisplayedNetAmount(item) || 0)
+    }, 0)
+  }, [filteredOrders])
+
+  const settledCount = useMemo(() => {
+    return filteredOrders.filter((item) => isOrderSettled(item)).length
+  }, [filteredOrders])
+
+  const unsettledCount = useMemo(() => {
+    return filteredOrders.filter((item) => !isOrderSettled(item)).length
+  }, [filteredOrders])
+
+  const overdueUnsettledOrders = useMemo(() => {
+    return filteredOrders.filter((item) =>
+      shouldOrderTriggerUnsettledReminder(item, pricingConfig),
+    )
+  }, [filteredOrders, pricingConfig])
 
   const handleExport = async () => {
     if (filteredOrders.length === 0) {
@@ -276,12 +384,14 @@ function HistoryOrdersPage() {
       结束时间: formatDateTime(item.endAt),
       时长: formatDuration(getOrderDurationSeconds(item)),
       老板: item.boss || '未填写',
+      接单群: item.groupName || '未填写',
       备注: item.note || '未填写',
       单价: Number(item.hourRate || 0),
       实际到手:
         item.actualAmount === null || item.actualAmount === undefined
           ? ''
           : Number(item.actualAmount || 0),
+      结算状态: isOrderSettled(item) ? '已结算' : '未结算',
       状态: formatOrderStatus(item.status),
     }))
 
@@ -298,9 +408,11 @@ function HistoryOrdersPage() {
         开始时间: '2026-04-15 14:00:00',
         结束时间: '2026-04-15 16:30:00',
         老板: '张总',
+        接单群: '电竞群A',
         备注: '王者双排',
         单价: 40,
         实际到手: 90,
+        结算状态: '未结算',
       },
     ]
 
@@ -308,11 +420,16 @@ function HistoryOrdersPage() {
       { 字段: '开始时间', 说明: '必填，建议格式：YYYY-MM-DD HH:mm:ss' },
       { 字段: '结束时间', 说明: '必填，需晚于开始时间' },
       { 字段: '老板', 说明: '选填，空值会显示为未填写' },
+      { 字段: '接单群', 说明: '选填，可记录是哪个群接单' },
       { 字段: '备注', 说明: '选填，空值会默认未填写' },
       { 字段: '单价', 说明: '选填，不填默认 0' },
       {
         字段: '实际到手',
         说明: '选填，可留空；如果填写，将按实际到手金额统计和展示',
+      },
+      {
+        字段: '结算状态',
+        说明: '选填，支持“已结算/未结算”，不填默认未结算',
       },
     ]
 
@@ -346,7 +463,7 @@ function HistoryOrdersPage() {
       }
 
       const imported = rows
-        .map((row, idx) => normalizeImportedOrder(row, idx))
+        .map((row, idx) => normalizeImportedOrder(row, idx, pricingConfig))
         .filter(Boolean)
       const invalidCount = rows.length - imported.length
 
@@ -386,7 +503,7 @@ function HistoryOrdersPage() {
           return
         }
         const imported = rows
-          .map((row, idx) => normalizeImportedOrder(row, idx))
+          .map((row, idx) => normalizeImportedOrder(row, idx, pricingConfig))
           .filter(Boolean)
         const invalidCount = rows.length - imported.length
         if (imported.length === 0) {
@@ -431,6 +548,36 @@ function HistoryOrdersPage() {
     setSelectedRowKeys((prev) => prev.filter((item) => item !== orderId))
   }
 
+  const handleToggleSettlement = async (orderId) => {
+    const targetOrder = orders.find((item) => item.id === orderId)
+    const wasSettled = isOrderSettled(targetOrder || {})
+    const nextOrders = orders.map((item) => {
+      if (item.id !== orderId) {
+        return item
+      }
+
+      const nextStatus = isOrderSettled(item) ? 'unsettled' : 'settled'
+      return {
+        ...item,
+        settlementStatus: nextStatus,
+        settledAt:
+          nextStatus === 'settled'
+            ? item.settledAt || new Date().toISOString()
+            : null,
+      }
+    })
+
+    await persistOrders(
+      nextOrders,
+      wasSettled ? '订单已改为未结算' : '订单已标记为已结算',
+    )
+  }
+
+  const openDetailModal = (order) => {
+    setDetailOrder(order)
+    setDetailOpen(true)
+  }
+
   const handleCopyReport = async (record) => {
     try {
       const template = loadReportTemplate()
@@ -461,11 +608,44 @@ function HistoryOrdersPage() {
     setSelectedRowKeys([])
   }
 
+  const handleBatchSetSettlement = async (targetStatus) => {
+    if (selectedRowKeys.length === 0) {
+      message.warning('请先选择要标记的订单')
+      return
+    }
+
+    const selectedSet = new Set(selectedRowKeys)
+    const nextOrders = orders.map((item) => {
+      if (!selectedSet.has(item.id)) {
+        return item
+      }
+
+      return {
+        ...item,
+        settlementStatus: targetStatus,
+        settledAt:
+          targetStatus === 'settled'
+            ? item.settledAt || new Date().toISOString()
+            : null,
+      }
+    })
+
+    await persistOrders(
+      nextOrders,
+      targetStatus === 'settled'
+        ? `已批量标记 ${selectedRowKeys.length} 条为已结算`
+        : `已批量标记 ${selectedRowKeys.length} 条为未结算`,
+    )
+    setSelectedRowKeys([])
+  }
+
   const openEditModal = (record) => {
     setEditingOrderId(record.id)
     editForm.setFieldsValue({
       startAtInput: toPickerValue(record.startAt),
       endAtInput: toPickerValue(record.endAt),
+      pricingTemplateId:
+        record.pricingTemplateId || pricingConfig.pricingTemplateId,
       hourRate: Number(record.hourRate || 0),
       billingRule: normalizeBillingRule(record.billingRule, 'tiered15'),
       commissionMode: normalizeCommissionMode(
@@ -474,8 +654,13 @@ function HistoryOrdersPage() {
       ),
       commissionValue: Number(record.commissionValue || 0),
       boss: record.boss || '',
+      groupName: record.groupName || '',
       note: record.note || '',
       actualAmount: normalizeOptionalActualAmount(record.actualAmount),
+      settlementStatus: normalizeSettlementStatus(
+        record.settlementStatus,
+        'settled',
+      ),
       gamePrice: Number(record.gamePrice || 0),
       gameCount: Number(record.gameCount || 1),
     })
@@ -510,23 +695,53 @@ function HistoryOrdersPage() {
       }
     }
 
+    const editTemplate = getPricingTemplateById(
+      pricingConfig,
+      values.pricingTemplateId,
+      pricingConfig,
+    )
+    const editPricingSnapshot = applyPricingTemplate({}, editTemplate)
+
     const nextOrders = orders.map((item) => {
       if (item.id !== editingOrderId) return item
+
+      const settlementStatus = normalizeSettlementStatus(
+        values.settlementStatus,
+        item.settlementStatus,
+      )
+
       return {
         ...item,
         startAt,
         endAt,
         boss: values.boss?.trim() || '',
+        groupName: values.groupName?.trim() || '',
         hourRate:
           editBillingRuleVal === 'perGame' ? 0 : Number(values.hourRate),
-        billingRule: editBillingRuleVal,
+        pricingTemplateId:
+          values.pricingTemplateId || editPricingSnapshot.pricingTemplateId,
+        billingRule: editBillingRuleVal || editPricingSnapshot.billingRule,
+        billingSegments:
+          editBillingRuleVal === 'customSegment'
+            ? editPricingSnapshot.billingSegments
+            : [],
         commissionMode: normalizeCommissionMode(
-          values.commissionMode,
-          'percentage',
+          values.commissionMode || editPricingSnapshot.commissionMode,
+          editPricingSnapshot.commissionMode,
         ),
-        commissionValue: Math.max(0, Number(values.commissionValue || 0)),
+        commissionValue: Math.max(
+          0,
+          Number(
+            values.commissionValue ?? editPricingSnapshot.commissionValue ?? 0,
+          ),
+        ),
         note: values.note?.trim() || '未备注',
         actualAmount: normalizeOptionalActualAmount(values.actualAmount),
+        settlementStatus,
+        settledAt:
+          settlementStatus === 'settled'
+            ? item.settledAt || new Date().toISOString()
+            : null,
         ...(editBillingRuleVal === 'perGame' && {
           gamePrice: Math.max(0, Number(values.gamePrice || 0)),
           gameCount: Math.max(1, Math.round(Number(values.gameCount || 1))),
@@ -542,22 +757,20 @@ function HistoryOrdersPage() {
     setEditOpen(false)
     setEditingOrderId('')
 
-    const totalSeconds = Math.max(
-      0,
-      Math.floor(
-        (new Date(endAt).getTime() - new Date(startAt).getTime()) / 1000,
-      ),
-    )
     const shortState = getShortTiered15State({
       startAt,
       endAt,
-      billingRule: values.billingRule,
+      billingRule: editBillingRuleVal,
+      billingSegments:
+        editBillingRuleVal === 'customSegment'
+          ? editPricingSnapshot.billingSegments
+          : [],
       actualAmount: normalizeOptionalActualAmount(values.actualAmount),
     })
 
     if (shortState.shouldGrayOut) {
       message.warning(
-        '这条订单未满15分钟，当前会按未计费记录显示；如果老板付款了，请手动填写实际到手金额。',
+        `这条订单${buildUnbilledHintText(shortState)}，当前会按未计费记录显示；如果老板付款了，请手动填写实际到手金额。`,
       )
       return
     }
@@ -594,68 +807,10 @@ function HistoryOrdersPage() {
 
   const baseColumns = [
     {
-      title: '开始时间',
-      dataIndex: 'startAt',
-      key: 'startAt',
-      width: 180,
-      render: (value, row) => {
-        const shortState = getShortTiered15State(row)
-        const timeNode = (
-          <span className="history-start-time-text">
-            {formatDateTime(value)}
-          </span>
-        )
-
-        if (!shortState.shouldGrayOut) {
-          return timeNode
-        }
-
-        return (
-          <Tooltip title="未满15分钟，当前按未计费记录保留。">
-            <span className="history-status-leading-icon">
-              <ExclamationCircleOutlined />
-              {timeNode}
-            </span>
-          </Tooltip>
-        )
-      },
-    },
-    {
-      title: '结束时间',
-      dataIndex: 'endAt',
-      key: 'endAt',
-      width: 180,
-      render: (value) => formatDateTime(value),
-    },
-    {
-      title: '时长',
-      key: 'duration',
-      width: 150,
-      render: (_, row) => {
-        const shortState = getShortTiered15State(row)
-        const durationNode = (
-          <span
-            className={shortState.shouldGrayOut ? 'history-muted-text' : ''}
-          >
-            {formatDuration(getOrderDurationSeconds(row))}
-          </span>
-        )
-
-        if (!shortState.shouldGrayOut) {
-          return durationNode
-        }
-
-        return (
-          <Tooltip title="15分钟制未满15分钟默认不计费；如果老板付款了，请手动填写实际到手金额。">
-            {durationNode}
-          </Tooltip>
-        )
-      },
-    },
-    {
       title: '状态',
       key: 'billingStatus',
       width: 88,
+      responsive: ['sm'],
       render: (_, row) => {
         const shortState = getShortTiered15State(row)
 
@@ -666,8 +821,54 @@ function HistoryOrdersPage() {
         }
 
         return (
-          <Tooltip title="未满15分钟，默认不计费；如果老板付款了，请编辑或导入实际到手金额。">
+          <Tooltip
+            title={`${buildUnbilledHintText(shortState)}，默认不计费；如果老板付款了，请编辑或导入实际到手金额。`}
+          >
             <span className="history-order-status-pill is-muted">未计费</span>
+          </Tooltip>
+        )
+      },
+    },
+    {
+      title: '结算',
+      key: 'settlementStatus',
+      width: 88,
+      render: (_, row) => {
+        const settled = isOrderSettled(row)
+        return (
+          <Tooltip
+            title={
+              settled
+                ? `已结算${row.settledAt ? `：${formatDateTime(row.settledAt)}` : ''}`
+                : `未结算，已等待 ${getUnsettledAgeDays(
+                    row,
+                    Date.now(),
+                    pricingConfig.unsettledReminderMode,
+                  )} 天`
+            }
+          >
+            <span
+              role="button"
+              tabIndex={0}
+              className={`history-order-status-pill history-settlement-clickable ${
+                settled ? 'is-settled' : 'is-unsettled'
+              }`}
+              onClick={(event) => {
+                event.stopPropagation()
+                handleToggleSettlement(row.id)
+              }}
+              onDoubleClick={(event) => {
+                event.stopPropagation()
+              }}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                  event.preventDefault()
+                  handleToggleSettlement(row.id)
+                }
+              }}
+            >
+              {settled ? '已结' : '未结'}
+            </span>
           </Tooltip>
         )
       },
@@ -676,7 +877,15 @@ function HistoryOrdersPage() {
       title: '老板',
       dataIndex: 'boss',
       key: 'boss',
-      width: 120,
+      width: 96,
+      render: (value) => (value && value.trim() ? value : '未填写'),
+    },
+    {
+      title: '接单群',
+      dataIndex: 'groupName',
+      key: 'groupName',
+      width: 108,
+      responsive: ['md'],
       render: (value) => (value && value.trim() ? value : '未填写'),
     },
     {
@@ -684,6 +893,7 @@ function HistoryOrdersPage() {
       dataIndex: 'hourRate',
       key: 'hourRate',
       width: 90,
+      responsive: ['sm'],
       render: (value, row) => {
         if (row.billingRule === 'perGame') {
           const text = `${Number(row.gamePrice || 0)}×${row.gameCount || 0}把`
@@ -705,7 +915,7 @@ function HistoryOrdersPage() {
       title: '实际到手',
       dataIndex: 'actualAmount',
       key: 'actualAmount',
-      width: 110,
+      width: 92,
       render: (_, row) => {
         const amount = Number(getDisplayedNetAmount(row))
         const shortState = getShortTiered15State(row)
@@ -726,6 +936,7 @@ function HistoryOrdersPage() {
       title: '备注',
       dataIndex: 'note',
       key: 'note',
+      responsive: ['lg'],
       ellipsis: true,
     },
   ]
@@ -735,39 +946,93 @@ function HistoryOrdersPage() {
     {
       title: '操作',
       key: 'action',
-      width: 130,
+      width: 148,
       render: (_, row) => (
         <Space size={0}>
-          <Tooltip title="复制报单">
+          <Tooltip title="查看详情" placement="top">
+            <Button
+              type="text"
+              size="small"
+              icon={<EyeOutlined />}
+              onClick={(event) => {
+                event.stopPropagation()
+                openDetailModal(row)
+              }}
+              onDoubleClick={(event) => {
+                event.stopPropagation()
+              }}
+            />
+          </Tooltip>
+          <Tooltip title="复制报单" placement="top">
             <Button
               type="text"
               size="small"
               icon={<CopyOutlined />}
-              onClick={() => handleCopyReport(row)}
+              onClick={(event) => {
+                event.stopPropagation()
+                handleCopyReport(row)
+              }}
+              onDoubleClick={(event) => {
+                event.stopPropagation()
+              }}
             />
           </Tooltip>
-          <Tooltip title="编辑订单">
+          <Tooltip title="编辑订单" placement="top">
             <Button
               type="text"
               size="small"
               icon={<EditOutlined />}
-              onClick={() => openEditModal(row)}
+              onClick={(event) => {
+                event.stopPropagation()
+                openEditModal(row)
+              }}
+              onDoubleClick={(event) => {
+                event.stopPropagation()
+              }}
+            />
+          </Tooltip>
+          <Tooltip
+            title={isOrderSettled(row) ? '改为未结算' : '标记为已结算'}
+            placement="top"
+          >
+            <Button
+              type="text"
+              size="small"
+              icon={
+                isOrderSettled(row) ? (
+                  <RollbackOutlined />
+                ) : (
+                  <CheckCircleOutlined />
+                )
+              }
+              onClick={(event) => {
+                event.stopPropagation()
+                handleToggleSettlement(row.id)
+              }}
+              onDoubleClick={(event) => {
+                event.stopPropagation()
+              }}
             />
           </Tooltip>
           <Popconfirm
             title="删除这条历史订单？"
             okText="删除"
             cancelText="取消"
+            placement="topRight"
             onConfirm={() => handleDeleteOrder(row.id)}
           >
-            <Tooltip title="删除订单">
-              <Button
-                type="text"
-                danger
-                size="small"
-                icon={<DeleteOutlined />}
-              />
-            </Tooltip>
+            <Button
+              type="text"
+              danger
+              size="small"
+              icon={<DeleteOutlined />}
+              onClick={(event) => {
+                event.stopPropagation()
+              }}
+              onDoubleClick={(event) => {
+                event.stopPropagation()
+              }}
+            />
           </Popconfirm>
         </Space>
       ),
@@ -785,11 +1050,16 @@ function HistoryOrdersPage() {
             </Typography.Text>
           </div>
           <div className="history-hero-badges">
-            <span>{`总订单 ${orders.length} 条`}</span>
-            <span>{`当前筛选 ${filteredOrders.length} 条`}</span>
+            <span className="history-hero-badge is-total">{`总订单 ${orders.length} 条`}</span>
+            <span className="history-hero-badge is-filter">{`当前筛选 ${filteredOrders.length} 条`}</span>
+            <span className="history-hero-badge is-settled">{`已结 ${settledCount} 条 · 到手 ¥${settledAmount.toFixed(2)}`}</span>
+            <span className="history-hero-badge is-unsettled">{`未结 ${unsettledCount} 条 · 到手 ¥${unsettledAmount.toFixed(2)}`}</span>
             <span>
               {keyword ? `关键词：${keyword}` : '支持老板 / 备注 / 时间检索'}
             </span>
+            {pricingConfig.unsettledReminderEnabled ? (
+              <span className="history-hero-badge is-alert">{`超期未结 ${overdueUnsettledOrders.length} 笔`}</span>
+            ) : null}
           </div>
         </div>
 
@@ -801,6 +1071,17 @@ function HistoryOrdersPage() {
               style={{ width: 280 }}
               value={keyword}
               onChange={(e) => setKeyword(e.target.value)}
+            />
+            <Select
+              value={settlementFilter}
+              style={{ width: 140 }}
+              onChange={setSettlementFilter}
+              options={[
+                { value: 'all', label: '全部结算状态' },
+                { value: 'settled', label: '仅已结算' },
+                { value: 'unsettled', label: '仅未结算' },
+              ]}
+              popupMatchSelectWidth={240}
             />
             <Button
               icon={<ReloadOutlined />}
@@ -852,6 +1133,22 @@ function HistoryOrdersPage() {
                   : '批量删除'}
               </Button>
             </Popconfirm>
+            <Button
+              disabled={selectedRowKeys.length === 0}
+              onClick={() => handleBatchSetSettlement('settled')}
+            >
+              {selectedRowKeys.length > 0
+                ? `批量改已结(${selectedRowKeys.length})`
+                : '批量改已结'}
+            </Button>
+            <Button
+              disabled={selectedRowKeys.length === 0}
+              onClick={() => handleBatchSetSettlement('unsettled')}
+            >
+              {selectedRowKeys.length > 0
+                ? `批量改未结(${selectedRowKeys.length})`
+                : '批量改未结'}
+            </Button>
             <Typography.Text type="secondary">
               共 {filteredOrders.length} 条
             </Typography.Text>
@@ -859,6 +1156,19 @@ function HistoryOrdersPage() {
         </Card>
 
         <Card size="small" className="history-table-card">
+          {pricingConfig.unsettledReminderEnabled &&
+          overdueUnsettledOrders.length >=
+            Number(pricingConfig.unsettledReminderMinOrders || 1) ? (
+            <div style={{ marginBottom: 10 }}>
+              <Typography.Text type="warning">
+                {`提醒：当前有 ${overdueUnsettledOrders.length} 条未结订单已超过 ${pricingConfig.unsettledReminderDays} 天（${
+                  pricingConfig.unsettledReminderMode === 'elapsed24h'
+                    ? '按24小时'
+                    : '按自然日'
+                }）`}
+              </Typography.Text>
+            </div>
+          ) : null}
           <Table
             rowKey="id"
             size="small"
@@ -874,7 +1184,20 @@ function HistoryOrdersPage() {
               selectedRowKeys,
               onChange: (keys) => setSelectedRowKeys(keys),
             }}
-            scroll={{ x: 980 }}
+            onRow={(record) => ({
+              onDoubleClick: (event) => {
+                const target = event.target
+                if (
+                  target instanceof HTMLElement &&
+                  (target.closest('.history-settlement-clickable') ||
+                    target.closest('.ant-btn') ||
+                    target.closest('.ant-popover'))
+                ) {
+                  return
+                }
+                openDetailModal(record)
+              },
+            })}
             pagination={{
               pageSize: 12,
               showSizeChanger: false,
@@ -913,10 +1236,101 @@ function HistoryOrdersPage() {
                 ? 'history-order-row-muted'
                 : ''
             }
+            onRow={(record) => ({
+              onDoubleClick: (event) => {
+                const target = event.target
+                if (
+                  target instanceof HTMLElement &&
+                  (target.closest('.history-settlement-clickable') ||
+                    target.closest('.ant-btn') ||
+                    target.closest('.ant-popover'))
+                ) {
+                  return
+                }
+                openDetailModal(record)
+              },
+            })}
             pagination={{ pageSize: 6, showSizeChanger: false }}
-            scroll={{ x: 980 }}
           />
         </Space>
+      </Modal>
+
+      <Modal
+        title="订单详情"
+        open={detailOpen}
+        footer={null}
+        onCancel={() => setDetailOpen(false)}
+        width={760}
+      >
+        {detailOrder ? (
+          <Descriptions bordered size="small" column={2}>
+            <Descriptions.Item label="开始时间" span={1}>
+              {formatDateTime(detailOrder.startAt)}
+            </Descriptions.Item>
+            <Descriptions.Item label="结束时间" span={1}>
+              {detailOrder.endAt ? formatDateTime(detailOrder.endAt) : '进行中'}
+            </Descriptions.Item>
+            <Descriptions.Item label="时长" span={1}>
+              {formatDuration(getOrderDurationSeconds(detailOrder))}
+            </Descriptions.Item>
+            <Descriptions.Item label="结算状态" span={1}>
+              {isOrderSettled(detailOrder) ? '已结算' : '未结算'}
+            </Descriptions.Item>
+            <Descriptions.Item label="老板" span={1}>
+              {detailOrder.boss || '未填写'}
+            </Descriptions.Item>
+            <Descriptions.Item label="接单群" span={1}>
+              {detailOrder.groupName || '未填写'}
+            </Descriptions.Item>
+            <Descriptions.Item label="计费规则" span={1}>
+              {normalizeBillingRule(detailOrder.billingRule, 'tiered15') ===
+              'perGame'
+                ? '按把计费'
+                : normalizeBillingRule(detailOrder.billingRule, 'tiered15') ===
+                    'minutes'
+                  ? '分钟制'
+                  : '15分钟制'}
+            </Descriptions.Item>
+            <Descriptions.Item label="抽成方式" span={1}>
+              {normalizeCommissionMode(
+                detailOrder.commissionMode,
+                'percentage',
+              ) === 'fixed'
+                ? '按小时固定抽成'
+                : '按比例抽成'}
+            </Descriptions.Item>
+            <Descriptions.Item label="单价/把价" span={1}>
+              {normalizeBillingRule(detailOrder.billingRule, 'tiered15') ===
+              'perGame'
+                ? `${Number(detailOrder.gamePrice || 0)} 元/把 × ${Number(
+                    detailOrder.gameCount || 1,
+                  )} 把`
+                : `${Number(detailOrder.hourRate || 0).toFixed(2)} 元/小时`}
+            </Descriptions.Item>
+            <Descriptions.Item label="抽成数值" span={1}>
+              {normalizeCommissionMode(
+                detailOrder.commissionMode,
+                'percentage',
+              ) === 'fixed'
+                ? `${Number(detailOrder.commissionValue || 0).toFixed(2)} 元/小时`
+                : `${Number(detailOrder.commissionValue || 0).toFixed(2)} %`}
+            </Descriptions.Item>
+            <Descriptions.Item label="结算金额" span={1}>
+              {`¥ ${Number(
+                getSettlementAmount(
+                  detailOrder,
+                  getOrderDurationSeconds(detailOrder),
+                ),
+              ).toFixed(2)}`}
+            </Descriptions.Item>
+            <Descriptions.Item label="到手金额" span={1}>
+              {`¥ ${Number(getDisplayedNetAmount(detailOrder)).toFixed(2)}`}
+            </Descriptions.Item>
+            <Descriptions.Item label="备注" span={2}>
+              {detailOrder.note || '未填写'}
+            </Descriptions.Item>
+          </Descriptions>
+        ) : null}
       </Modal>
 
       <Modal
@@ -991,16 +1405,33 @@ function HistoryOrdersPage() {
             </Form.Item>
           )}
           <Form.Item label="计费规则" name="billingRule">
-            <Select options={BILLING_RULE_OPTIONS} />
+            <Select
+              options={BILLING_RULE_OPTIONS}
+              popupMatchSelectWidth={320}
+            />
           </Form.Item>
           <Form.Item label="抽成方式" name="commissionMode">
-            <Select options={COMMISSION_MODE_OPTIONS} />
+            <Select
+              options={COMMISSION_MODE_OPTIONS}
+              popupMatchSelectWidth={320}
+            />
           </Form.Item>
           <Form.Item label="抽成数值" name="commissionValue">
             <InputNumber min={0} step={1} style={{ width: '100%' }} />
           </Form.Item>
           <Form.Item label="老板(选填)" name="boss">
             <Input maxLength={20} placeholder="例如：张总" />
+          </Form.Item>
+          <Form.Item label="接单群(选填)" name="groupName">
+            <Input maxLength={30} placeholder="例如：某某接单群" />
+          </Form.Item>
+          <Form.Item label="结算状态" name="settlementStatus">
+            <Select
+              options={[
+                { value: 'unsettled', label: '未结算' },
+                { value: 'settled', label: '已结算' },
+              ]}
+            />
           </Form.Item>
           <Form.Item label="实际到手(选填)" name="actualAmount">
             <InputNumber min={0} step={1} style={{ width: '100%' }} />

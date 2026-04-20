@@ -1,4 +1,5 @@
-import React, { useEffect, useMemo, useRef, useState } from 'react'
+/* eslint-disable react/prop-types */
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { Button, Checkbox, Layout, Menu, Modal, Space, Typography } from 'antd'
 import {
   MenuFoldOutlined,
@@ -25,6 +26,7 @@ function MainLayout({ children, menuRouteGroups }) {
   const [closeDialogRequestId, setCloseDialogRequestId] = useState('')
   const [appTheme, setAppTheme] = useState(() => loadTheme())
   const [menuRippleKey, setMenuRippleKey] = useState('')
+  const [appSettingsDirty, setAppSettingsDirty] = useState(false)
   const menuRippleTimerRef = useRef(null)
 
   const menuItems = useMemo(() => {
@@ -56,6 +58,10 @@ function MainLayout({ children, menuRouteGroups }) {
 
     return prefixMatch?.path || ''
   }, [location.pathname, menuRouteGroups])
+
+  const routeStageClassName = useMemo(() => {
+    return `route-switch-stage ${location.state?.slideFromRight ? 'route-switch-stage--from-right' : ''}`
+  }, [location.state])
 
   const activeParentKey = useMemo(() => {
     const route = menuRouteGroups
@@ -204,6 +210,26 @@ function MainLayout({ children, menuRouteGroups }) {
   }
 
   useEffect(() => {
+    const syncSettingsDirty = (event) => {
+      if (typeof event?.detail?.dirty === 'boolean') {
+        setAppSettingsDirty(event.detail.dirty)
+        return
+      }
+      setAppSettingsDirty(Boolean(window.__appSettingsDirty))
+    }
+
+    syncSettingsDirty()
+    window.addEventListener('app-settings-dirty-changed', syncSettingsDirty)
+
+    return () => {
+      window.removeEventListener(
+        'app-settings-dirty-changed',
+        syncSettingsDirty,
+      )
+    }
+  }, [])
+
+  useEffect(() => {
     return () => {
       if (menuRippleTimerRef.current) {
         window.clearTimeout(menuRippleTimerRef.current)
@@ -212,16 +238,36 @@ function MainLayout({ children, menuRouteGroups }) {
   }, [])
 
   const handleMenuClick = ({ key }) => {
-    navigate(key)
-    setMenuRippleKey(key)
+    const jump = () => {
+      navigate(key)
+      setMenuRippleKey(key)
 
-    if (menuRippleTimerRef.current) {
-      window.clearTimeout(menuRippleTimerRef.current)
+      if (menuRippleTimerRef.current) {
+        window.clearTimeout(menuRippleTimerRef.current)
+      }
+
+      menuRippleTimerRef.current = window.setTimeout(() => {
+        setMenuRippleKey('')
+      }, 520)
     }
 
-    menuRippleTimerRef.current = window.setTimeout(() => {
-      setMenuRippleKey('')
-    }, 520)
+    const isLeavingDirtySettings =
+      location.pathname === '/system/app-settings' &&
+      key !== '/system/app-settings' &&
+      appSettingsDirty
+
+    if (isLeavingDirtySettings) {
+      Modal.confirm({
+        title: '偏好设置有未保存改动',
+        content: '你有改动尚未保存，继续跳转会丢失本次修改。是否继续？',
+        okText: '继续跳转',
+        cancelText: '留在当前页',
+        onOk: jump,
+      })
+      return
+    }
+
+    jump()
   }
 
   return (
@@ -287,7 +333,7 @@ function MainLayout({ children, menuRouteGroups }) {
           </Button>
         </div>
         <Content className="app-content">
-          <div key={location.pathname} className="route-switch-stage">
+          <div key={location.pathname} className={routeStageClassName}>
             {children}
           </div>
         </Content>

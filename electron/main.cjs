@@ -24,6 +24,33 @@ const CLOSE_DECISION_RESPONSE_CHANNEL = 'app:close-decision'
 const DEFAULT_BILLING_RULE = 'tiered15'
 const DEFAULT_COMMISSION_MODE = 'percentage'
 const DEFAULT_COMMISSION_VALUE = 10
+const DEFAULT_PRICING_TEMPLATE_ID = 'tpl-tiered15-10p'
+const DEFAULT_PRICING_TEMPLATES = [
+  {
+    id: 'tpl-tiered15-10p',
+    name: '15分钟制 - 抽成10%',
+    billingRule: 'tiered15',
+    commissionMode: 'percentage',
+    commissionValue: 10,
+    builtIn: true,
+  },
+  {
+    id: 'tpl-minute-10p',
+    name: '分钟制 - 抽成10%',
+    billingRule: 'minute',
+    commissionMode: 'percentage',
+    commissionValue: 10,
+    builtIn: true,
+  },
+  {
+    id: 'tpl-pergame-15p',
+    name: '按把计费 - 抽成15%',
+    billingRule: 'perGame',
+    commissionMode: 'percentage',
+    commissionValue: 15,
+    builtIn: true,
+  },
+]
 
 const stableUserDataPath = path.join(app.getPath('appData'), APP_DATA_DIR_NAME)
 
@@ -192,30 +219,195 @@ function readAppSettings() {
 }
 
 function normalizeBillingRule(value, fallback = DEFAULT_BILLING_RULE) {
-  return value === 'tiered15' || value === 'minute' ? value : fallback
+  return value === 'tiered15' || value === 'minute' || value === 'perGame'
+    ? value
+    : fallback
 }
 
 function normalizeCommissionMode(value, fallback = DEFAULT_COMMISSION_MODE) {
   return value === 'fixed' || value === 'percentage' ? value : fallback
 }
 
+function normalizeUnsettledReminderMode(value, fallback = 'naturalDay') {
+  return value === 'naturalDay' || value === 'elapsed24h' ? value : fallback
+}
+
+function normalizeUnsettledReminderDays(value, fallback = 1) {
+  const parsed = Math.floor(Number(value ?? fallback ?? 1))
+  if (parsed <= 1) return 1
+  if (parsed === 2) return 2
+  return 3
+}
+
+function normalizeUnsettledReminderMinOrders(value, fallback = 1) {
+  const parsed = Math.floor(Number(value ?? fallback ?? 1))
+  if (!Number.isFinite(parsed) || parsed <= 1) {
+    return 1
+  }
+  return Math.max(1, parsed)
+}
+
+function normalizePricingTemplate(template = {}, fallbackTemplate = {}) {
+  const fallbackId =
+    typeof fallbackTemplate.id === 'string' ? fallbackTemplate.id : ''
+  const id =
+    typeof template.id === 'string' && template.id.trim()
+      ? template.id.trim()
+      : fallbackId
+
+  const fallbackName =
+    typeof fallbackTemplate.name === 'string' && fallbackTemplate.name.trim()
+      ? fallbackTemplate.name.trim()
+      : '自定义模板'
+  const name =
+    typeof template.name === 'string' && template.name.trim()
+      ? template.name.trim()
+      : fallbackName
+
+  return {
+    id,
+    name,
+    billingRule: normalizeBillingRule(
+      template.billingRule,
+      normalizeBillingRule(fallbackTemplate.billingRule, DEFAULT_BILLING_RULE),
+    ),
+    commissionMode: normalizeCommissionMode(
+      template.commissionMode,
+      normalizeCommissionMode(
+        fallbackTemplate.commissionMode,
+        DEFAULT_COMMISSION_MODE,
+      ),
+    ),
+    commissionValue: Math.max(
+      0,
+      Number(
+        template.commissionValue ??
+          fallbackTemplate.commissionValue ??
+          DEFAULT_COMMISSION_VALUE,
+      ) || 0,
+    ),
+    builtIn: Boolean(template.builtIn || fallbackTemplate.builtIn),
+  }
+}
+
+function normalizePricingTemplates(
+  templates,
+  fallbackTemplates = DEFAULT_PRICING_TEMPLATES,
+) {
+  const source =
+    Array.isArray(templates) && templates.length > 0
+      ? templates
+      : fallbackTemplates
+
+  const normalized = source
+    .map((item, index) =>
+      normalizePricingTemplate(item, fallbackTemplates[index] || {}),
+    )
+    .filter((item) => item.id)
+
+  if (normalized.length === 0) {
+    return DEFAULT_PRICING_TEMPLATES.map((item) => ({ ...item }))
+  }
+
+  const used = new Set()
+  return normalized.map((item, index) => {
+    let nextId = item.id
+    if (used.has(nextId)) {
+      nextId = `${nextId}-${index + 1}`
+    }
+    used.add(nextId)
+    return {
+      ...item,
+      id: nextId,
+    }
+  })
+}
+
+function normalizePricingTemplateId(
+  value,
+  templates,
+  fallbackId = DEFAULT_PRICING_TEMPLATE_ID,
+) {
+  const ids = new Set((templates || []).map((item) => item.id))
+  if (typeof value === 'string' && ids.has(value)) {
+    return value
+  }
+  if (typeof fallbackId === 'string' && ids.has(fallbackId)) {
+    return fallbackId
+  }
+  return (templates || [])[0]?.id || DEFAULT_PRICING_TEMPLATE_ID
+}
+
 function normalizePricingConfig(input = {}, fallback = {}) {
+  const fallbackTemplates = Array.isArray(fallback.pricingTemplates)
+    ? fallback.pricingTemplates
+    : DEFAULT_PRICING_TEMPLATES
+  const pricingTemplates = normalizePricingTemplates(
+    input.pricingTemplates,
+    fallbackTemplates,
+  )
+  const fallbackTemplateId =
+    fallback.pricingTemplateId ||
+    pricingTemplates[0]?.id ||
+    DEFAULT_PRICING_TEMPLATE_ID
+  const pricingTemplateId = normalizePricingTemplateId(
+    input.pricingTemplateId,
+    pricingTemplates,
+    fallbackTemplateId,
+  )
+  const selectedTemplate =
+    pricingTemplates.find((item) => item.id === pricingTemplateId) ||
+    pricingTemplates[0] ||
+    null
+
   return {
     billingRule: normalizeBillingRule(
       input.billingRule,
-      normalizeBillingRule(fallback.billingRule, DEFAULT_BILLING_RULE),
+      normalizeBillingRule(
+        selectedTemplate?.billingRule,
+        normalizeBillingRule(fallback.billingRule, DEFAULT_BILLING_RULE),
+      ),
     ),
     commissionMode: normalizeCommissionMode(
       input.commissionMode,
-      normalizeCommissionMode(fallback.commissionMode, DEFAULT_COMMISSION_MODE),
+      normalizeCommissionMode(
+        selectedTemplate?.commissionMode,
+        normalizeCommissionMode(
+          fallback.commissionMode,
+          DEFAULT_COMMISSION_MODE,
+        ),
+      ),
     ),
     commissionValue: Math.max(
       0,
       Number(
         input.commissionValue ??
+          selectedTemplate?.commissionValue ??
           fallback.commissionValue ??
           DEFAULT_COMMISSION_VALUE,
       ) || 0,
+    ),
+    pricingTemplateId,
+    pricingTemplates,
+    showDailyEncouragement:
+      typeof input.showDailyEncouragement === 'boolean'
+        ? input.showDailyEncouragement
+        : fallback.showDailyEncouragement !== false,
+    unsettledReminderEnabled:
+      typeof input.unsettledReminderEnabled === 'boolean'
+        ? input.unsettledReminderEnabled
+        : fallback.unsettledReminderEnabled !== false,
+    unsettledReminderDays: normalizeUnsettledReminderDays(
+      input.unsettledReminderDays,
+      fallback.unsettledReminderDays,
+    ),
+    unsettledReminderMode: normalizeUnsettledReminderMode(
+      input.unsettledReminderMode,
+      fallback.unsettledReminderMode,
+    ),
+    unsettledReminderMinOrders: normalizeUnsettledReminderMinOrders(
+      input.unsettledReminderMinOrders,
+      fallback.unsettledReminderMinOrders,
     ),
   }
 }

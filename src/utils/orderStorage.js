@@ -1,9 +1,13 @@
-import { DEFAULT_PRICING_CONFIG, normalizePricingConfig } from './pricing'
+import {
+  DEFAULT_PRICING_CONFIG,
+  normalizePricingConfig,
+  normalizeSettlementStatus,
+} from './pricing'
 
 const ORDERS_KEY = 'playmate.orders'
 const ACTIVE_ORDER_KEY = 'playmate.activeOrder'
 const REPORT_TEMPLATE_KEY = 'playmate.reportTemplate'
-const REPORT_FIELDS_KEY = 'playmate.reportFields'
+const PRICING_CONFIG_KEY = 'playmate.pricingConfig'
 
 /**
  * 自动变量映射表 — 这些变量会从订单数据中自动填充
@@ -74,7 +78,7 @@ export function loadReportTemplate() {
   return buildTemplateString(loadTemplateRows())
 }
 
-export function saveReportTemplate(template) {
+export function saveReportTemplate() {
   // no-op, use saveTemplateRows instead
 }
 
@@ -89,7 +93,7 @@ export function loadReportFields() {
   return fields
 }
 
-export function saveReportFields(fields) {
+export function saveReportFields() {
   // no-op, use saveTemplateRows instead
 }
 
@@ -97,7 +101,7 @@ function buildTemplateString(rows) {
   return rows.map((r) => `${r.label}：{{${r.label}}}`).join('\n')
 }
 
-export function generateReportText(template, order, fields, pricingHelpers) {
+export function generateReportText(_template, order, fields, pricingHelpers) {
   const {
     getOrderDurationSeconds,
     getSettlementAmount,
@@ -174,10 +178,42 @@ function normalizePayload(payload) {
   }
 
   return {
-    orders: Array.isArray(payload.orders) ? payload.orders : [],
+    orders: Array.isArray(payload.orders)
+      ? payload.orders.map(normalizeOrderRecord)
+      : [],
     activeOrder:
       payload.activeOrder && typeof payload.activeOrder === 'object'
-        ? payload.activeOrder
+        ? normalizeOrderRecord(payload.activeOrder, { isActive: true })
+        : null,
+  }
+}
+
+function normalizeOrderRecord(order, options = {}) {
+  if (!order || typeof order !== 'object') {
+    return {}
+  }
+
+  const isActive = Boolean(options.isActive)
+
+  return {
+    ...order,
+    groupName:
+      typeof order.groupName === 'string'
+        ? order.groupName.trim()
+        : typeof order.sourceGroup === 'string'
+          ? order.sourceGroup.trim()
+          : '',
+    pricingTemplateId:
+      typeof order.pricingTemplateId === 'string'
+        ? order.pricingTemplateId
+        : '',
+    settlementStatus: normalizeSettlementStatus(
+      order.settlementStatus,
+      isActive ? 'unsettled' : 'settled',
+    ),
+    settledAt:
+      typeof order.settledAt === 'string' && order.settledAt
+        ? order.settledAt
         : null,
   }
 }
@@ -206,6 +242,41 @@ function writeLocalPayload(payload) {
     )
   } else {
     localStorage.removeItem(ACTIVE_ORDER_KEY)
+  }
+}
+
+function readLocalPricingConfig() {
+  try {
+    const raw = localStorage.getItem(PRICING_CONFIG_KEY)
+    if (!raw) {
+      return { ...DEFAULT_PRICING_CONFIG }
+    }
+    return normalizePricingConfig(JSON.parse(raw), DEFAULT_PRICING_CONFIG)
+  } catch {
+    return { ...DEFAULT_PRICING_CONFIG }
+  }
+}
+
+function writeLocalPricingConfig(config) {
+  try {
+    localStorage.setItem(PRICING_CONFIG_KEY, JSON.stringify(config))
+  } catch {
+    // Ignore localStorage write failures.
+  }
+}
+
+function emitPricingConfigUpdated(config) {
+  if (typeof window?.dispatchEvent !== 'function') {
+    return
+  }
+  try {
+    window.dispatchEvent(
+      new CustomEvent('pricing-config-updated', {
+        detail: config,
+      }),
+    )
+  } catch {
+    // Ignore event dispatch failures.
   }
 }
 
@@ -250,10 +321,11 @@ export async function saveOrdersData(payload) {
 
 export async function getDataStorageConfig() {
   if (!window.appData?.getConfig) {
+    const localConfig = readLocalPricingConfig()
     return {
       dataDir: '浏览器本地存储',
       supported: false,
-      ...DEFAULT_PRICING_CONFIG,
+      ...localConfig,
     }
   }
 
@@ -265,10 +337,11 @@ export async function getDataStorageConfig() {
       ...normalizePricingConfig(result),
     }
   } catch {
+    const localConfig = readLocalPricingConfig()
     return {
       dataDir: '',
       supported: true,
-      ...DEFAULT_PRICING_CONFIG,
+      ...localConfig,
     }
   }
 }
@@ -280,10 +353,12 @@ export async function getPricingConfig() {
 
 export async function savePricingConfig(config) {
   const normalized = normalizePricingConfig(config)
+  writeLocalPricingConfig(normalized)
 
   if (!window.appData?.setPricingConfig) {
+    emitPricingConfigUpdated(normalized)
     return {
-      ok: false,
+      ok: true,
       supported: false,
       ...normalized,
     }
@@ -291,14 +366,19 @@ export async function savePricingConfig(config) {
 
   try {
     const result = await window.appData.setPricingConfig(normalized)
-    return {
+    const merged = {
       ok: true,
       supported: true,
       ...normalizePricingConfig(result, normalized),
     }
-  } catch {
+    emitPricingConfigUpdated(merged)
     return {
-      ok: false,
+      ...merged,
+    }
+  } catch {
+    emitPricingConfigUpdated(normalized)
+    return {
+      ok: true,
       supported: true,
       ...normalized,
     }

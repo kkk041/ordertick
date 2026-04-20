@@ -279,6 +279,11 @@
   transform-origin: 50% 0%;
 }
 
+.route-switch-stage.route-switch-stage--from-right {
+  animation: route-switch-in-from-right 0.44s cubic-bezier(0.2, 0.7, 0.2, 1)
+    both;
+}
+
 .app-sider .ant-menu {
   background: transparent;
 }
@@ -456,6 +461,19 @@
   to {
     opacity: 1;
     transform: translateY(0) scale(1);
+    filter: blur(0);
+  }
+}
+
+@keyframes route-switch-in-from-right {
+  from {
+    opacity: 0;
+    transform: translateX(42px) scale(0.994);
+    filter: blur(1.2px);
+  }
+  to {
+    opacity: 1;
+    transform: translateX(0) scale(1);
     filter: blur(0);
   }
 }

@@ -7,6 +7,96 @@
   margin-bottom: 2px;
 }
 
+.history-hero {
+  display: flex;
+  flex-direction: row;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.history-hero-badges {
+  display: flex;
+  flex-wrap: nowrap;
+  gap: 8px;
+  white-space: nowrap;
+  overflow-x: auto;
+  overflow-y: hidden;
+  max-width: 100%;
+  padding-bottom: 2px;
+  scrollbar-width: thin;
+}
+
+.history-hero-badges > * {
+  flex-shrink: 0;
+}
+
+.history-hero-badges:hover,
+.history-hero-badges:focus-within {
+  scrollbar-color: color-mix(in srgb, var(--theme-primary) 68%, #94a3b8)
+    transparent;
+}
+
+.history-hero-badges::-webkit-scrollbar {
+  height: 8px;
+}
+
+.history-hero-badges:hover::-webkit-scrollbar,
+.history-hero-badges:focus-within::-webkit-scrollbar {
+  height: 8px;
+}
+
+.history-hero-badges::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.history-hero-badges::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: transparent;
+}
+
+.history-hero-badges:hover::-webkit-scrollbar-thumb,
+.history-hero-badges:focus-within::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--theme-primary) 68%, #94a3b8);
+}
+
+.history-hero-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  border: 1px solid var(--panel-border);
+  background: var(--card-soft-bg);
+}
+
+.history-hero-badge.is-total,
+.history-hero-badge.is-filter {
+  color: #1d4ed8;
+  background: rgba(219, 234, 254, 0.92);
+  border-color: rgba(59, 130, 246, 0.28);
+}
+
+.history-hero-badge.is-settled {
+  color: #166534;
+  background: rgba(220, 252, 231, 0.92);
+  border-color: rgba(34, 197, 94, 0.28);
+  font-weight: 700;
+}
+
+.history-hero-badge.is-unsettled {
+  color: #9a3412;
+  background: rgba(255, 237, 213, 0.94);
+  border-color: rgba(251, 146, 60, 0.34);
+  font-weight: 700;
+}
+
+.history-hero-badge.is-alert {
+  color: #92400e;
+  background: rgba(254, 243, 199, 0.95);
+  border-color: rgba(245, 158, 11, 0.35);
+}
+
 .history-page > .ant-space > * {
   opacity: 0;
   animation: history-block-in 0.44s ease-out both;
@@ -79,14 +169,15 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-width: 52px;
-  padding: 2px 8px;
+  min-width: 58px;
+  padding: 3px 9px;
   border-radius: 999px;
-  font-size: 11px;
-  font-weight: 600;
+  font-size: 12px;
+  font-weight: 700;
   line-height: 1.4;
   border: 1px solid transparent;
   white-space: nowrap;
+  box-shadow: 0 2px 8px rgba(2, 6, 23, 0.08);
 }
 
 .history-order-status-pill.is-normal {
@@ -99,6 +190,68 @@
   color: #5b6b80;
   background: rgba(148, 163, 184, 0.18);
   border-color: rgba(148, 163, 184, 0.22);
+}
+
+.history-order-status-pill.is-settled {
+  color: #14532d;
+  background: rgba(34, 197, 94, 0.2);
+  border-color: rgba(22, 163, 74, 0.34);
+}
+
+.history-order-status-pill.is-unsettled {
+  color: #7c2d12;
+  background: rgba(251, 146, 60, 0.24);
+  border-color: rgba(249, 115, 22, 0.36);
+}
+
+.history-settlement-clickable {
+  cursor: pointer;
+  transition: transform 0.15s ease;
+}
+
+.history-settlement-clickable:hover {
+  transform: translateY(-1px);
+}
+
+.history-page .ant-table-content {
+  scrollbar-width: thin;
+  scrollbar-color: color-mix(in srgb, var(--theme-primary) 68%, #94a3b8)
+    transparent;
+}
+
+.history-page .ant-table-content::-webkit-scrollbar {
+  height: 10px;
+  width: 10px;
+}
+
+.history-page .ant-table-content::-webkit-scrollbar-thumb {
+  border-radius: 999px;
+  background: transparent;
+}
+
+.history-page .ant-table-content::-webkit-scrollbar-thumb:hover {
+  background: color-mix(in srgb, var(--theme-primary) 80%, #64748b);
+}
+
+.history-page .ant-table-content::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+.history-page .ant-table-content:hover,
+.history-page .ant-table-content:focus-within {
+  scrollbar-color: color-mix(in srgb, var(--theme-primary) 68%, #94a3b8)
+    transparent;
+}
+
+.history-page .ant-table-content:hover::-webkit-scrollbar,
+.history-page .ant-table-content:focus-within::-webkit-scrollbar {
+  height: 10px;
+  width: 10px;
+}
+
+.history-page .ant-table-content:hover::-webkit-scrollbar-thumb,
+.history-page .ant-table-content:focus-within::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--theme-primary) 68%, #94a3b8);
 }
 
 .history-order-row-muted > td {
@@ -196,6 +349,18 @@
   border-color: rgba(232, 155, 189, 0.24);
 }
 
+:root[data-theme='girl'] .history-order-status-pill.is-settled {
+  color: #7a1f4c;
+  background: rgba(255, 122, 173, 0.22);
+  border-color: rgba(215, 64, 130, 0.34);
+}
+
+:root[data-theme='girl'] .history-order-status-pill.is-unsettled {
+  color: #8a2f61;
+  background: rgba(255, 179, 208, 0.3);
+  border-color: rgba(232, 120, 171, 0.38);
+}
+
 :root[data-theme='girl'] .history-order-row-muted > td {
   color: #9e4d73 !important;
   background: linear-gradient(
@@ -241,6 +406,18 @@
   color: #d1d9e6;
   background: rgba(100, 116, 139, 0.28);
   border-color: rgba(148, 163, 184, 0.24);
+}
+
+:root[data-theme='dark'] .history-order-status-pill.is-settled {
+  color: #86efac;
+  background: rgba(22, 163, 74, 0.3);
+  border-color: rgba(74, 222, 128, 0.38);
+}
+
+:root[data-theme='dark'] .history-order-status-pill.is-unsettled {
+  color: #fdba74;
+  background: rgba(249, 115, 22, 0.28);
+  border-color: rgba(251, 146, 60, 0.36);
 }
 
 :root[data-theme='dark'] .history-order-row-muted > td {
@@ -293,5 +470,16 @@
   to {
     opacity: 1;
     transform: translateY(0);
+  }
+}
+
+@media (max-width: 1180px) {
+  .history-hero {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .history-hero-badges {
+    width: 100%;
   }
 }

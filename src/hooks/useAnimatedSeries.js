@@ -13,10 +13,9 @@ export default function useAnimatedSeries(
   items,
   { keyField = 'key', fields = ['value'], duration = 720 } = {},
 ) {
-  const fieldList = useMemo(
-    () => (Array.isArray(fields) && fields.length ? [...fields] : ['value']),
-    [JSON.stringify(fields || ['value'])],
-  )
+  const fieldList = useMemo(() => {
+    return Array.isArray(fields) && fields.length ? [...fields] : ['value']
+  }, [fields])
   const safeItems = useMemo(
     () => (Array.isArray(items) ? items.map((item) => ({ ...item })) : []),
     [items],

@@ -1,3 +1,4 @@
+/* eslint-disable react/prop-types */
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Card, Col, Empty, Row, Space, Typography } from 'antd'
 import { useLocation } from 'react-router-dom'
