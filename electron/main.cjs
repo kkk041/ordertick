@@ -752,6 +752,41 @@ app.whenReady().then(() => {
     return { ok: true }
   })
 
+  ipcMain.handle('app:save-file', async (_event, { defaultName, buffer }) => {
+    const result = await dialog.showSaveDialog({
+      title: '保存文件',
+      defaultPath: defaultName,
+      filters: [
+        { name: 'Excel 文件', extensions: ['xlsx', 'xls'] },
+        { name: '所有文件', extensions: ['*'] },
+      ],
+    })
+    if (result.canceled || !result.filePath) {
+      return { canceled: true }
+    }
+    fs.writeFileSync(result.filePath, Buffer.from(buffer))
+    return { canceled: false, filePath: result.filePath }
+  })
+
+  ipcMain.handle('app:open-file', async () => {
+    const result = await dialog.showOpenDialog({
+      title: '选择 Excel 文件',
+      filters: [{ name: 'Excel 文件', extensions: ['xlsx', 'xls', 'csv'] }],
+      properties: ['openFile'],
+    })
+    if (result.canceled || !result.filePaths?.[0]) {
+      return { canceled: true }
+    }
+    const filePath = result.filePaths[0]
+    const data = fs.readFileSync(filePath)
+    return {
+      canceled: false,
+      filePath,
+      fileName: path.basename(filePath),
+      buffer: Array.from(new Uint8Array(data)),
+    }
+  })
+
   app.on('activate', () => {
     if (mainWindow && !mainWindow.isDestroyed()) {
       showMainWindow()

@@ -48,6 +48,29 @@ import {
 } from '../../utils/pricing'
 import './HistoryOrdersPage.css'
 
+/** 保存 workbook：Electron 走 IPC 弹保存对话框，浏览器走 DOM 下载 */
+async function saveWorkbook(workbook, defaultName) {
+  const buf = XLSX.write(workbook, { type: 'array', bookType: 'xlsx' })
+  if (window.appData?.saveFile) {
+    const result = await window.appData.saveFile({
+      defaultName,
+      buffer: Array.from(new Uint8Array(buf)),
+    })
+    return !result.canceled
+  }
+  // 浏览器兜底
+  const blob = new Blob([buf], { type: 'application/octet-stream' })
+  const url = URL.createObjectURL(blob)
+  const a = document.createElement('a')
+  a.href = url
+  a.download = defaultName
+  document.body.appendChild(a)
+  a.click()
+  document.body.removeChild(a)
+  URL.revokeObjectURL(url)
+  return true
+}
+
 function formatDateTime(value) {
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) {
@@ -242,7 +265,7 @@ function HistoryOrdersPage() {
     })
   }, [orders, keyword])
 
-  const handleExport = () => {
+  const handleExport = async () => {
     if (filteredOrders.length === 0) {
       message.warning('当前没有可导出的订单数据')
       return
@@ -265,11 +288,11 @@ function HistoryOrdersPage() {
     const worksheet = XLSX.utils.json_to_sheet(exportRows)
     const workbook = XLSX.utils.book_new()
     XLSX.utils.book_append_sheet(workbook, worksheet, '历史订单')
-    XLSX.writeFile(workbook, `历史订单-${Date.now()}.xlsx`)
-    message.success('历史订单已导出')
+    const saved = await saveWorkbook(workbook, `历史订单-${Date.now()}.xlsx`)
+    if (saved) message.success('历史订单已导出')
   }
 
-  const handleDownloadTemplate = () => {
+  const handleDownloadTemplate = async () => {
     const templateRows = [
       {
         开始时间: '2026-04-15 14:00:00',
@@ -299,8 +322,8 @@ function HistoryOrdersPage() {
 
     XLSX.utils.book_append_sheet(workbook, templateSheet, '模板')
     XLSX.utils.book_append_sheet(workbook, noteSheet, '说明')
-    XLSX.writeFile(workbook, '历史订单导入模板.xlsx')
-    message.success('导入模板已下载')
+    const saved = await saveWorkbook(workbook, '历史订单导入模板.xlsx')
+    if (saved) message.success('导入模板已下载')
   }
 
   const handleImport = async (file) => {
@@ -341,6 +364,43 @@ function HistoryOrdersPage() {
     }
 
     return false
+  }
+
+  const handleImportClick = async () => {
+    if (window.appData?.openFile) {
+      try {
+        const result = await window.appData.openFile()
+        if (result.canceled) return
+        const buf = new Uint8Array(result.buffer)
+        const workbook = XLSX.read(buf, { type: 'array', cellDates: true })
+        const firstSheet = workbook.SheetNames[0]
+        if (!firstSheet) {
+          message.error('未找到可读取的工作表')
+          return
+        }
+        const rows = XLSX.utils.sheet_to_json(workbook.Sheets[firstSheet], {
+          defval: '',
+        })
+        if (!Array.isArray(rows) || rows.length === 0) {
+          message.warning('导入文件为空')
+          return
+        }
+        const imported = rows
+          .map((row, idx) => normalizeImportedOrder(row, idx))
+          .filter(Boolean)
+        const invalidCount = rows.length - imported.length
+        if (imported.length === 0) {
+          message.error('未识别到有效订单，请检查列名或时间格式')
+          return
+        }
+        setImportPreviewRows(imported)
+        setImportInvalidCount(invalidCount)
+        setImportSourceName(result.fileName || '导入文件')
+        setImportPreviewOpen(true)
+      } catch {
+        message.error('导入失败，请检查 Excel 文件格式')
+      }
+    }
   }
 
   const closeImportPreview = () => {
@@ -749,13 +809,19 @@ function HistoryOrdersPage() {
             >
               刷新
             </Button>
-            <Upload
-              accept=".xlsx,.xls,.csv"
-              showUploadList={false}
-              beforeUpload={handleImport}
-            >
-              <Button icon={<UploadOutlined />}>导入 Excel</Button>
-            </Upload>
+            {window.appData?.openFile ? (
+              <Button icon={<UploadOutlined />} onClick={handleImportClick}>
+                导入 Excel
+              </Button>
+            ) : (
+              <Upload
+                accept=".xlsx,.xls,.csv"
+                showUploadList={false}
+                beforeUpload={handleImport}
+              >
+                <Button icon={<UploadOutlined />}>导入 Excel</Button>
+              </Upload>
+            )}
             <Button
               icon={<FileExcelOutlined />}
               onClick={handleDownloadTemplate}

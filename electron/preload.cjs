@@ -32,4 +32,6 @@ contextBridge.exposeInMainWorld('appData', {
   chooseDirectory: () => ipcRenderer.invoke('app:data:choose-dir'),
   getOrdersData: () => ipcRenderer.invoke('app:data:get'),
   setOrdersData: (payload) => ipcRenderer.invoke('app:data:set', payload),
+  saveFile: (payload) => ipcRenderer.invoke('app:save-file', payload),
+  openFile: () => ipcRenderer.invoke('app:open-file'),
 })
