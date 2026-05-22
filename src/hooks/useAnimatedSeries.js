@@ -23,6 +23,7 @@ export default function useAnimatedSeries(
 
   const [animatedItems, setAnimatedItems] = useState(safeItems)
   const snapshotRef = useRef(new Map())
+  const initializedRef = useRef(false)
 
   useEffect(() => {
     snapshotRef.current = new Map(
@@ -46,6 +47,13 @@ export default function useAnimatedSeries(
         }, {}),
       ]),
     )
+
+    if (!initializedRef.current) {
+      initializedRef.current = true
+      setAnimatedItems(safeItems)
+      snapshotRef.current = nextSnapshot
+      return undefined
+    }
 
     const shouldAnimate = safeItems.some((item) => {
       const key = String(item?.[keyField] ?? '')

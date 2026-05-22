@@ -38,6 +38,7 @@ import {
 import dayjs from 'dayjs'
 import AnimatedNumber from '../../components/common/AnimatedNumber'
 import overviewCopy from '../../data/overviewCopy.json'
+import poetryQuotes from '../../data/poetryQuotes'
 import {
   getPricingConfig,
   loadOrdersData,
@@ -50,6 +51,7 @@ import {
   BILLING_RULE_OPTIONS,
   COMMISSION_MODE_OPTIONS,
   DEFAULT_PRICING_CONFIG,
+  getReportTemplateById,
   getPricingTemplateById,
   getBillingRuleLabel,
   getCommissionAmount,
@@ -151,7 +153,6 @@ function pickerToIso(value) {
 
 const {
   hourlyEncouragements: hourlyEncouragementCopy,
-  dailyReflections: dailyReflectionCopy,
 } = overviewCopy
 
 const BILLING_RULE_HELP =
@@ -420,33 +421,69 @@ function buildHourlyEncouragement({
   }
 }
 
-function buildDailyReflectionQuote(copy, seedKey) {
-  if (!copy || typeof copy !== 'object') {
-    return ''
+const MIN_POETRY_ROTATION_DAYS = 92
+const POETRY_ROTATION_OFFSET = 17
+const DAY_MS = 24 * 60 * 60 * 1000
+
+// HACK: 今日打气的古诗词体验目前只是先满足“本地大诗词库 + 每日轮换”。
+// 后续需要重新设计内容筛选、译文质量、交互方式和整体 UI 气质。
+function buildPoetryCatalog(baseItems) {
+  const source = Array.isArray(baseItems) ? baseItems.filter(Boolean) : []
+  if (source.length === 0) {
+    return []
   }
 
-  const subject = pickSeededItem(copy.subject, `${seedKey}:subject`)
-  const observation = pickSeededItem(copy.observation, `${seedKey}:observation`)
-  const advice = pickSeededItem(copy.advice, `${seedKey}:advice`)
+  if (source.length >= MIN_POETRY_ROTATION_DAYS) {
+    return source.map((item, index) => ({
+      ...item,
+      rotationKey: `${item.title || 'poetry'}-${index}`,
+    }))
+  }
 
-  const patterns = [
-    `${subject}，${observation}${advice}`,
-    `${subject}${observation}${advice}`,
-    `${subject}，说到底${observation}${advice}`,
-  ]
-
-  return patterns[hashString(`${seedKey}:pattern`) % patterns.length]
+  return Array.from({ length: MIN_POETRY_ROTATION_DAYS }, (_, index) => {
+    const item = source[index % source.length]
+    return {
+      ...item,
+      rotationKey: `${item.title || 'poetry'}-${index}`,
+    }
+  })
 }
 
-function buildDailyReflection(nowMs, quote) {
-  const currentDate = new Date(nowMs)
+const poetryCatalog = buildPoetryCatalog(poetryQuotes)
+
+function getDayIndex(nowMs) {
+  const date = new Date(nowMs)
+  if (Number.isNaN(date.getTime())) {
+    return 0
+  }
+  const localMidnight = new Date(
+    date.getFullYear(),
+    date.getMonth(),
+    date.getDate(),
+  )
+  return Math.floor(localMidnight.getTime() / DAY_MS)
+}
+
+function buildDailyPoetry(nowMs) {
+  if (poetryCatalog.length === 0) {
+    return null
+  }
+
+  const dayIndex = getDayIndex(nowMs)
+  const item =
+    poetryCatalog[(dayIndex + POETRY_ROTATION_OFFSET) % poetryCatalog.length]
+  const date = new Date(nowMs)
   const weekLabels = ['周日', '周一', '周二', '周三', '周四', '周五', '周六']
 
   return {
-    key: `${currentDate.getFullYear()}-${currentDate.getMonth() + 1}-${currentDate.getDate()}`,
-    title: `每日一句 · ${weekLabels[currentDate.getDay()]}`,
-    quote,
-    note: '别急着把所有事都想明白，先把今天过稳，很多答案会自己慢慢出现。',
+    key: `${dayIndex}-${item.rotationKey || item.text}`,
+    title: item.title || '古诗词',
+    author: item.author || '佚名',
+    dynasty: item.dynasty || '',
+    text: item.text || '',
+    translation: item.translation || '',
+    scheduleLabel: `每日 00:00 更新 · ${weekLabels[date.getDay()]}`,
+    guaranteeLabel: `本地诗词库 ${poetryCatalog.length} 首，至少三个月不重复`,
   }
 }
 
@@ -486,6 +523,12 @@ function OverviewPage() {
   )
   const [pricingTemplates, setPricingTemplates] = useState(
     DEFAULT_PRICING_CONFIG.pricingTemplates,
+  )
+  const [reportTemplateId, setReportTemplateId] = useState(
+    DEFAULT_PRICING_CONFIG.reportTemplateId,
+  )
+  const [reportTemplates, setReportTemplates] = useState(
+    DEFAULT_PRICING_CONFIG.reportTemplates,
   )
   const [showDailyEncouragement, setShowDailyEncouragement] = useState(
     DEFAULT_PRICING_CONFIG.showDailyEncouragement,
@@ -570,6 +613,8 @@ function OverviewPage() {
     setCommissionValue(savedPricingConfig.commissionValue)
     setPricingTemplateId(savedPricingConfig.pricingTemplateId)
     setPricingTemplates(savedPricingConfig.pricingTemplates)
+    setReportTemplateId(savedPricingConfig.reportTemplateId)
+    setReportTemplates(savedPricingConfig.reportTemplates)
     setShowDailyEncouragement(
       savedPricingConfig.showDailyEncouragement !== false,
     )
@@ -766,6 +811,79 @@ function OverviewPage() {
     setCommissionValue(Number(selectedPricingTemplate.commissionValue || 0))
   }, [selectedPricingTemplate])
 
+  const pricingTemplateOptions = useMemo(
+    () =>
+      pricingTemplates.map((tpl) => ({
+        value: tpl.id,
+        label: tpl.groupName ? `${tpl.name} / ${tpl.groupName}` : tpl.name,
+      })),
+    [pricingTemplates],
+  )
+
+  const reportTemplateOptions = useMemo(
+    () =>
+      reportTemplates.map((tpl) => ({
+        value: tpl.id,
+        label: tpl.name,
+      })),
+    [reportTemplates],
+  )
+
+  const getReportTemplateName = useCallback(
+    (templateId) => {
+      const template = getReportTemplateById(
+        {
+          ...pricingConfig,
+          reportTemplateId,
+          reportTemplates,
+        },
+        templateId || reportTemplateId,
+        pricingConfig,
+      )
+      return template?.name || '默认报单模板'
+    },
+    [pricingConfig, reportTemplateId, reportTemplates],
+  )
+
+  const applyPricingTemplateSelection = useCallback(
+    (templateId, targetForm = null) => {
+      const template = getPricingTemplateById(
+        {
+          ...pricingConfig,
+          pricingTemplates,
+          pricingTemplateId,
+        },
+        templateId,
+        pricingConfig,
+      )
+      if (!template) {
+        return
+      }
+
+      const nextValues = {
+        pricingTemplateId: template.id,
+        billingRule: template.billingRule,
+        commissionMode: template.commissionMode,
+        commissionValue: Number(template.commissionValue || 0),
+        groupName: template.groupName || '',
+      }
+
+      if (targetForm) {
+        targetForm.setFieldsValue(nextValues)
+        return
+      }
+
+      setPricingTemplateId(template.id)
+      setBillingRule(template.billingRule)
+      setCommissionMode(template.commissionMode)
+      setCommissionValue(Number(template.commissionValue || 0))
+      if (template.groupName) {
+        setGroupName(template.groupName)
+      }
+    },
+    [pricingConfig, pricingTemplateId, pricingTemplates],
+  )
+
   const todaySettledNetIncome = useMemo(() => {
     return todayOrders.reduce((sum, item) => {
       if (!isOrderSettled(item)) {
@@ -845,13 +963,9 @@ function OverviewPage() {
     todayOrders.length,
   ])
 
-  const dailyReflectionQuote = useMemo(() => {
-    return buildDailyReflectionQuote(dailyReflectionCopy, `${todayKey}:daily`)
-  }, [todayKey])
-
-  const dailyReflection = useMemo(() => {
-    return buildDailyReflection(nowMs, dailyReflectionQuote)
-  }, [dailyReflectionQuote, nowMs])
+  const dailyPoetry = useMemo(() => {
+    return buildDailyPoetry(nowMs)
+  }, [nowMs])
 
   const startOrder = () => {
     if (activeOrder) {
@@ -864,7 +978,7 @@ function OverviewPage() {
       pricingConfig.billingRule,
     )
 
-    if (currentBillingRule !== 'perGame') {
+    if (currentBillingRule !== 'perGame' && currentBillingRule !== 'customSegment') {
       const validHourRate = ensureHourRate(hourRate)
       if (validHourRate === null) {
         return
@@ -876,9 +990,15 @@ function OverviewPage() {
       startAt: new Date().toISOString(),
       note: note.trim() || '未备注',
       boss: boss.trim() || '',
-      groupName: groupName.trim() || '',
-      hourRate: currentBillingRule === 'perGame' ? 0 : ensureHourRate(hourRate),
+      groupName: groupName.trim() || selectedPricingTemplate?.groupName || '',
+      hourRate:
+        currentBillingRule === 'perGame'
+          ? 0
+          : currentBillingRule === 'customSegment'
+            ? Number(hourRate || 0)
+            : ensureHourRate(hourRate),
       pricingTemplateId,
+      reportTemplateId,
       billingRule: currentBillingRule,
       billingSegments: buildBillingSegmentsSnapshot(
         currentBillingRule,
@@ -914,7 +1034,7 @@ function OverviewPage() {
       pricingConfig.billingRule,
     )
 
-    if (currentBillingRule !== 'perGame') {
+    if (currentBillingRule !== 'perGame' && currentBillingRule !== 'customSegment') {
       const validHourRate = ensureHourRate(
         hourRate || activeOrder.hourRate,
         '结束接单前请先填写单价，单价为必填项',
@@ -931,12 +1051,19 @@ function OverviewPage() {
       status: 'done',
       note: note.trim() || activeOrder.note || '未备注',
       boss: boss.trim() || activeOrder.boss || '',
-      groupName: groupName.trim() || activeOrder.groupName || '',
+      groupName:
+        groupName.trim() ||
+        activeOrder.groupName ||
+        selectedPricingTemplate?.groupName ||
+        '',
       hourRate:
         currentBillingRule === 'perGame'
           ? 0
-          : ensureHourRate(hourRate || activeOrder.hourRate),
+          : currentBillingRule === 'customSegment'
+            ? Number(hourRate || activeOrder.hourRate || 0)
+            : ensureHourRate(hourRate || activeOrder.hourRate),
       pricingTemplateId,
+      reportTemplateId: activeOrder.reportTemplateId || reportTemplateId,
       billingRule: currentBillingRule,
       billingSegments:
         normalizeBillingRule(
@@ -1090,12 +1217,13 @@ function OverviewPage() {
       startAtInput: toPickerValue(start.toISOString()),
       endAtInput: toPickerValue(end.toISOString()),
       pricingTemplateId,
+      reportTemplateId,
       hourRate: Number(hourRate || 0),
       billingRule,
       commissionMode,
       commissionValue: Number(commissionValue || 0),
       boss: boss.trim() || '',
-      groupName: groupName.trim() || '',
+      groupName: groupName.trim() || selectedPricingTemplate?.groupName || '',
       note: note.trim() || '',
       actualAmount: null,
       settlementStatus: 'unsettled',
@@ -1123,7 +1251,7 @@ function OverviewPage() {
       pricingConfig.billingRule,
     )
 
-    if (suppBillingRule !== 'perGame') {
+    if (suppBillingRule !== 'perGame' && suppBillingRule !== 'customSegment') {
       const validHourRate = ensureHourRate(
         values.hourRate,
         '补录订单时请填写单价，单价为必填项',
@@ -1141,8 +1269,13 @@ function OverviewPage() {
       groupName: values.groupName?.trim() || '',
       note: values.note?.trim() || '补录订单',
       hourRate:
-        suppBillingRule === 'perGame' ? 0 : ensureHourRate(values.hourRate),
+        suppBillingRule === 'perGame'
+          ? 0
+          : suppBillingRule === 'customSegment'
+            ? Number(values.hourRate || 0)
+            : ensureHourRate(values.hourRate),
       pricingTemplateId: values.pricingTemplateId || pricingTemplateId,
+      reportTemplateId: values.reportTemplateId || reportTemplateId,
       billingRule: suppBillingRule,
       billingSegments: buildBillingSegmentsSnapshot(
         suppBillingRule,
@@ -1196,6 +1329,7 @@ function OverviewPage() {
       startAtInput: toPickerValue(record.startAt),
       endAtInput: toPickerValue(record.endAt),
       pricingTemplateId: record.pricingTemplateId || '',
+      reportTemplateId: record.reportTemplateId || reportTemplateId,
       hourRate: Number(record.hourRate || 0),
       billingRule: normalizeBillingRule(
         record.billingRule,
@@ -1240,7 +1374,7 @@ function OverviewPage() {
       pricingConfig.billingRule,
     )
 
-    if (editBillingRuleVal !== 'perGame') {
+    if (editBillingRuleVal !== 'perGame' && editBillingRuleVal !== 'customSegment') {
       const validHourRate = ensureHourRate(
         values.hourRate,
         '保存订单前请填写单价，单价为必填项',
@@ -1265,8 +1399,11 @@ function OverviewPage() {
           hourRate:
             editBillingRuleVal === 'perGame'
               ? 0
-              : ensureHourRate(values.hourRate),
+              : editBillingRuleVal === 'customSegment'
+                ? Number(values.hourRate || 0)
+                : ensureHourRate(values.hourRate),
           pricingTemplateId: values.pricingTemplateId || pricingTemplateId,
+          reportTemplateId: values.reportTemplateId || reportTemplateId,
           billingRule: editBillingRuleVal,
           billingSegments: buildBillingSegmentsSnapshot(
             editBillingRuleVal,
@@ -1336,10 +1473,12 @@ function OverviewPage() {
       startAtInput: toPickerValue(start.toISOString()),
       endAtInput: toPickerValue(end.toISOString()),
       pricingTemplateId,
+      reportTemplateId,
       hourRate: Number(hourRate || 0),
       billingRule,
       commissionMode,
       commissionValue: Number(commissionValue || 0),
+      groupName: groupName.trim() || selectedPricingTemplate?.groupName || '',
       actualAmount: null,
       settlementStatus: 'unsettled',
     })
@@ -1366,7 +1505,7 @@ function OverviewPage() {
       pricingConfig.billingRule,
     )
 
-    if (qcBillingRule !== 'perGame') {
+    if (qcBillingRule !== 'perGame' && qcBillingRule !== 'customSegment') {
       const validHourRate = ensureHourRate(
         values.hourRate,
         '快速补入前请填写单价，单价为必填项',
@@ -1381,11 +1520,16 @@ function OverviewPage() {
       startAt,
       endAt,
       boss: '未填写',
-      groupName: '',
+      groupName: values.groupName?.trim() || '',
       note: '未填写',
       hourRate:
-        qcBillingRule === 'perGame' ? 0 : ensureHourRate(values.hourRate),
+        qcBillingRule === 'perGame'
+          ? 0
+          : qcBillingRule === 'customSegment'
+            ? Number(values.hourRate || 0)
+            : ensureHourRate(values.hourRate),
       pricingTemplateId: values.pricingTemplateId || pricingTemplateId,
+      reportTemplateId: values.reportTemplateId || reportTemplateId,
       billingRule: qcBillingRule,
       billingSegments: buildBillingSegmentsSnapshot(
         qcBillingRule,
@@ -1593,6 +1737,17 @@ function OverviewPage() {
       dataIndex: 'note',
       key: 'note',
       ellipsis: true,
+    },
+    {
+      title: '报单模板',
+      key: 'reportTemplate',
+      width: 116,
+      ellipsis: true,
+      responsive: ['md'],
+      render: (_, record) => {
+        const text = getReportTemplateName(record.reportTemplateId)
+        return <Tooltip title={text}>{text}</Tooltip>
+      },
     },
     {
       title: '操作',
@@ -1975,6 +2130,30 @@ function OverviewPage() {
                 计费设置
               </Typography.Text>
               <Row gutter={[8, 6]}>
+                <Col xs={24} md={8}>
+                  <Typography.Text className="overview-form-label-sm">
+                    计费方案
+                  </Typography.Text>
+                  <Select
+                    size="small"
+                    value={pricingTemplateId}
+                    options={pricingTemplateOptions}
+                    onChange={(value) => applyPricingTemplateSelection(value)}
+                    popupMatchSelectWidth={320}
+                  />
+                </Col>
+                <Col xs={24} md={8}>
+                  <Typography.Text className="overview-form-label-sm">
+                    报单方案
+                  </Typography.Text>
+                  <Select
+                    size="small"
+                    value={reportTemplateId}
+                    options={reportTemplateOptions}
+                    onChange={setReportTemplateId}
+                    popupMatchSelectWidth={320}
+                  />
+                </Col>
                 <Col xs={12} md={8}>
                   <Typography.Text className="overview-form-label-sm">
                     {renderFieldLabel('计费规则', BILLING_RULE_HELP)}
@@ -2122,6 +2301,8 @@ function OverviewPage() {
         </Card>
 
         {showDailyEncouragement ? (
+          // HACK: 今日打气卡片当前仍沿用旧布局，只把右侧内容替换成古诗词。
+          // 用户还不满意，后续需要整体重做这块的信息结构和视觉交互。
           <Card
             title={renderOverviewPanelTitle(<BulbOutlined />, '今日打气')}
             extra={
@@ -2152,18 +2333,36 @@ function OverviewPage() {
                 </Typography.Text>
               </div>
 
-              <div
-                key={dailyReflection.key}
-                className="overview-daily-quote-card"
-              >
-                <span className="overview-daily-quote-kicker">
-                  {dailyReflection.title}
-                </span>
-                <blockquote>{dailyReflection.quote}</blockquote>
-                <Typography.Text type="secondary">
-                  {dailyReflection.note}
-                </Typography.Text>
-              </div>
+              {dailyPoetry ? (
+                <div
+                  key={dailyPoetry.key}
+                  className="overview-daily-quote-card"
+                >
+                  <div className="overview-daily-quote-head">
+                    <span className="overview-daily-quote-kicker">
+                      {dailyPoetry.scheduleLabel}
+                    </span>
+                    <span className="overview-daily-quote-count">
+                      {dailyPoetry.guaranteeLabel}
+                    </span>
+                  </div>
+                  <blockquote>{dailyPoetry.text}</blockquote>
+                  <div className="overview-daily-quote-meta">
+                    <strong>《{dailyPoetry.title}》</strong>
+                    <span>
+                      {dailyPoetry.dynasty
+                        ? `${dailyPoetry.dynasty} · ${dailyPoetry.author}`
+                        : dailyPoetry.author}
+                    </span>
+                  </div>
+                  <Typography.Text
+                    type="secondary"
+                    className="overview-daily-quote-translation"
+                  >
+                    {dailyPoetry.translation}
+                  </Typography.Text>
+                </div>
+              ) : null}
             </div>
           </Card>
         ) : null}
@@ -2229,11 +2428,34 @@ function OverviewPage() {
             <Form.Item
               label="单价(元/小时)"
               name="hourRate"
-              rules={[{ required: true, message: '请填写单价' }]}
+              rules={
+                supplementBillingRule === 'customSegment'
+                  ? []
+                  : [{ required: true, message: '请填写单价' }]
+              }
             >
-              <InputNumber min={0.01} step={5} style={{ width: '100%' }} />
+              <InputNumber min={0} step={5} style={{ width: '100%' }} />
             </Form.Item>
           )}
+          <Form.Item
+            label="计费方案"
+            name="pricingTemplateId"
+            className="compact-order-form-span-2"
+          >
+            <Select
+              options={pricingTemplateOptions}
+              onChange={(value) =>
+                applyPricingTemplateSelection(value, supplementForm)
+              }
+              popupMatchSelectWidth={320}
+            />
+          </Form.Item>
+          <Form.Item label="报单方案" name="reportTemplateId">
+            <Select
+              options={reportTemplateOptions}
+              popupMatchSelectWidth={320}
+            />
+          </Form.Item>
           <Form.Item
             label={renderFieldLabel('计费规则', BILLING_RULE_HELP)}
             name="billingRule"
@@ -2357,11 +2579,32 @@ function OverviewPage() {
             <Form.Item
               label="单价(元/小时)"
               name="hourRate"
-              rules={[{ required: true, message: '请填写单价' }]}
+              rules={
+                editBillingRule === 'customSegment'
+                  ? []
+                  : [{ required: true, message: '请填写单价' }]
+              }
             >
-              <InputNumber min={0.01} step={5} style={{ width: '100%' }} />
+              <InputNumber min={0} step={5} style={{ width: '100%' }} />
             </Form.Item>
           )}
+          <Form.Item
+            label="计费方案"
+            name="pricingTemplateId"
+            className="compact-order-form-span-2"
+          >
+            <Select
+              options={pricingTemplateOptions}
+              onChange={(value) => applyPricingTemplateSelection(value, editForm)}
+              popupMatchSelectWidth={320}
+            />
+          </Form.Item>
+          <Form.Item label="报单方案" name="reportTemplateId">
+            <Select
+              options={reportTemplateOptions}
+              popupMatchSelectWidth={320}
+            />
+          </Form.Item>
           <Form.Item
             label={renderFieldLabel('计费规则', BILLING_RULE_HELP)}
             name="billingRule"
@@ -2486,11 +2729,34 @@ function OverviewPage() {
             <Form.Item
               label="单价(元/小时)"
               name="hourRate"
-              rules={[{ required: true, message: '请填写单价' }]}
+              rules={
+                quickCalcBillingRule === 'customSegment'
+                  ? []
+                  : [{ required: true, message: '请填写单价' }]
+              }
             >
-              <InputNumber min={0.01} step={5} style={{ width: '100%' }} />
+              <InputNumber min={0} step={5} style={{ width: '100%' }} />
             </Form.Item>
           )}
+          <Form.Item
+            label="计费方案"
+            name="pricingTemplateId"
+            className="compact-order-form-span-2"
+          >
+            <Select
+              options={pricingTemplateOptions}
+              onChange={(value) =>
+                applyPricingTemplateSelection(value, quickCalcForm)
+              }
+              popupMatchSelectWidth={320}
+            />
+          </Form.Item>
+          <Form.Item label="报单方案" name="reportTemplateId">
+            <Select
+              options={reportTemplateOptions}
+              popupMatchSelectWidth={320}
+            />
+          </Form.Item>
           <Form.Item
             label={renderFieldLabel('计费规则', BILLING_RULE_HELP)}
             name="billingRule"

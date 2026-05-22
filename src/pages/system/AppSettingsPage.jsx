@@ -42,10 +42,14 @@ import {
   COMMISSION_MODE_OPTIONS,
   DEFAULT_CUSTOM_BILLING_SEGMENTS,
   DEFAULT_PRICING_CONFIG,
+  DEFAULT_REPORT_TEMPLATES,
   normalizeBillingSegments,
   normalizePricingConfig,
   normalizePricingTemplateId,
   normalizePricingTemplates,
+  normalizeReportTemplateId,
+  normalizeReportTemplates,
+  normalizeReportRows,
   normalizeUnsettledReminderDays,
   normalizeUnsettledReminderMode,
   normalizeUnsettledReminderMinOrders,
@@ -79,6 +83,8 @@ function buildSettingsSnapshot(payload) {
       commissionValue: Math.max(0, Number(payload.commissionValue || 0)),
       pricingTemplateId: payload.pricingTemplateId,
       pricingTemplates: normalizePricingTemplates(payload.pricingTemplates),
+      reportTemplateId: payload.reportTemplateId,
+      reportTemplates: normalizeReportTemplates(payload.reportTemplates),
       showDailyEncouragement: payload.showDailyEncouragement !== false,
       unsettledReminderEnabled: payload.unsettledReminderEnabled !== false,
       unsettledReminderDays: normalizeUnsettledReminderDays(
@@ -209,7 +215,6 @@ function parseTemplateTextRows(inputText, existingRows = []) {
 }
 
 function AppSettingsPage() {
-  const pricingTemplateLocked = true
   const location = useLocation()
   const current = loadBranding()
   const currentTheme = loadTheme()
@@ -234,6 +239,12 @@ function AppSettingsPage() {
   )
   const [pricingTemplates, setPricingTemplates] = useState(
     DEFAULT_PRICING_CONFIG.pricingTemplates,
+  )
+  const [reportTemplateId, setReportTemplateId] = useState(
+    DEFAULT_PRICING_CONFIG.reportTemplateId,
+  )
+  const [reportTemplates, setReportTemplates] = useState(
+    DEFAULT_PRICING_CONFIG.reportTemplates,
   )
   const [showDailyEncouragement, setShowDailyEncouragement] = useState(
     DEFAULT_PRICING_CONFIG.showDailyEncouragement,
@@ -283,6 +294,16 @@ function AppSettingsPage() {
         DEFAULT_PRICING_CONFIG.pricingTemplateId,
       ),
     )
+    setReportTemplates(
+      config.reportTemplates || DEFAULT_PRICING_CONFIG.reportTemplates,
+    )
+    setReportTemplateId(
+      normalizeReportTemplateId(
+        config.reportTemplateId,
+        config.reportTemplates,
+        DEFAULT_PRICING_CONFIG.reportTemplateId,
+      ),
+    )
     setShowDailyEncouragement(config.showDailyEncouragement !== false)
     setUnsettledReminderEnabled(config.unsettledReminderEnabled !== false)
     setUnsettledReminderDays(
@@ -323,6 +344,12 @@ function AppSettingsPage() {
         DEFAULT_PRICING_CONFIG.pricingTemplateId,
       ),
       pricingTemplates: config.pricingTemplates,
+      reportTemplateId: normalizeReportTemplateId(
+        config.reportTemplateId,
+        config.reportTemplates,
+        DEFAULT_PRICING_CONFIG.reportTemplateId,
+      ),
+      reportTemplates: config.reportTemplates,
       showDailyEncouragement: config.showDailyEncouragement,
       unsettledReminderEnabled: config.unsettledReminderEnabled,
       unsettledReminderDays: config.unsettledReminderDays,
@@ -347,6 +374,8 @@ function AppSettingsPage() {
         commissionValue,
         pricingTemplateId,
         pricingTemplates,
+        reportTemplateId,
+        reportTemplates,
         showDailyEncouragement,
         unsettledReminderEnabled,
         unsettledReminderDays,
@@ -364,6 +393,8 @@ function AppSettingsPage() {
     primaryColor,
     pricingTemplateId,
     pricingTemplates,
+    reportTemplateId,
+    reportTemplates,
     showDailyEncouragement,
     themeColors,
     themeMode,
@@ -419,6 +450,13 @@ function AppSettingsPage() {
     )
   }, [pricingTemplateId, pricingTemplates])
 
+  const selectedTemplateIndex = useMemo(() => {
+    return Math.max(
+      0,
+      pricingTemplates.findIndex((item) => item.id === pricingTemplateId),
+    )
+  }, [pricingTemplateId, pricingTemplates])
+
   useEffect(() => {
     if (!selectedTemplate) {
       return
@@ -428,6 +466,44 @@ function AppSettingsPage() {
     setCommissionMode(selectedTemplate.commissionMode)
     setCommissionValue(Number(selectedTemplate.commissionValue || 0))
   }, [selectedTemplate])
+
+  const selectedReportTemplate = useMemo(() => {
+    return (
+      reportTemplates.find((item) => item.id === reportTemplateId) ||
+      reportTemplates[0] ||
+      null
+    )
+  }, [reportTemplateId, reportTemplates])
+
+  useEffect(() => {
+    if (!selectedReportTemplate) {
+      return
+    }
+    setTemplateRows(normalizeReportRows(selectedReportTemplate.rows))
+  }, [selectedReportTemplate])
+
+  const updateSelectedTemplateRows = useCallback(
+    (updater) => {
+      const nextRows =
+        typeof updater === 'function' ? updater(templateRows) : updater
+      const normalizedRows = normalizeReportRows(nextRows)
+
+      setTemplateRows(normalizedRows)
+      setReportTemplates((prev) =>
+        normalizeReportTemplates(
+          prev.map((item) =>
+            item.id === reportTemplateId
+              ? {
+                  ...item,
+                  rows: normalizedRows,
+                }
+              : item,
+          ),
+        ),
+      )
+    },
+    [reportTemplateId, templateRows],
+  )
 
   useEffect(() => {
     const searchParams = new URLSearchParams(location.search)
@@ -492,6 +568,8 @@ function AppSettingsPage() {
         commissionValue,
         pricingTemplateId,
         pricingTemplates: normalizePricingTemplates(pricingTemplates),
+        reportTemplateId,
+        reportTemplates: normalizeReportTemplates(reportTemplates),
         showDailyEncouragement,
         unsettledReminderEnabled,
         unsettledReminderDays,
@@ -527,6 +605,8 @@ function AppSettingsPage() {
     setCommissionValue(DEFAULT_PRICING_CONFIG.commissionValue)
     setPricingTemplateId(DEFAULT_PRICING_CONFIG.pricingTemplateId)
     setPricingTemplates(DEFAULT_PRICING_CONFIG.pricingTemplates)
+    setReportTemplateId(DEFAULT_PRICING_CONFIG.reportTemplateId)
+    setReportTemplates(DEFAULT_PRICING_CONFIG.reportTemplates)
     setShowDailyEncouragement(DEFAULT_PRICING_CONFIG.showDailyEncouragement)
     setUnsettledReminderEnabled(DEFAULT_PRICING_CONFIG.unsettledReminderEnabled)
     setUnsettledReminderDays(DEFAULT_PRICING_CONFIG.unsettledReminderDays)
@@ -551,6 +631,8 @@ function AppSettingsPage() {
       commissionValue: DEFAULT_PRICING_CONFIG.commissionValue,
       pricingTemplateId: DEFAULT_PRICING_CONFIG.pricingTemplateId,
       pricingTemplates: DEFAULT_PRICING_CONFIG.pricingTemplates,
+      reportTemplateId: DEFAULT_PRICING_CONFIG.reportTemplateId,
+      reportTemplates: DEFAULT_PRICING_CONFIG.reportTemplates,
       showDailyEncouragement: DEFAULT_PRICING_CONFIG.showDailyEncouragement,
       unsettledReminderEnabled: DEFAULT_PRICING_CONFIG.unsettledReminderEnabled,
       unsettledReminderDays: DEFAULT_PRICING_CONFIG.unsettledReminderDays,
@@ -621,6 +703,48 @@ function AppSettingsPage() {
     setPricingTemplateId(nextId)
   }
 
+  const addReportTemplate = () => {
+    const id = `rpt-custom-${Date.now()}`
+    setReportTemplates((prev) =>
+      normalizeReportTemplates([
+        ...prev,
+        {
+          id,
+          name: `自定义报单${prev.filter((item) => !item.builtIn).length + 1}`,
+          rows: normalizeReportRows(
+            templateRows.length
+              ? templateRows
+              : DEFAULT_REPORT_TEMPLATES[0].rows,
+          ),
+          builtIn: false,
+        },
+      ]),
+    )
+    setReportTemplateId(id)
+  }
+
+  const removeReportTemplate = (targetId) => {
+    const remain = reportTemplates.filter((item) => item.id !== targetId)
+    const normalized = normalizeReportTemplates(remain)
+    const nextId = normalizeReportTemplateId(
+      reportTemplateId === targetId ? '' : reportTemplateId,
+      normalized,
+      DEFAULT_PRICING_CONFIG.reportTemplateId,
+    )
+    setReportTemplates(normalized)
+    setReportTemplateId(nextId)
+  }
+
+  const renameReportTemplate = (value) => {
+    setReportTemplates((prev) =>
+      normalizeReportTemplates(
+        prev.map((item) =>
+          item.id === reportTemplateId ? { ...item, name: value } : item,
+        ),
+      ),
+    )
+  }
+
   const handleApplyPastedTemplate = () => {
     if (!templatePasteText.trim()) {
       message.warning('请先粘贴文字模板内容')
@@ -641,7 +765,7 @@ function AppSettingsPage() {
       return
     }
 
-    setTemplateRows(rows)
+    updateSelectedTemplateRows(rows)
     setTemplateParseResult({
       importedLabels: rows.map((item) => item.label),
       ignored,
@@ -658,9 +782,6 @@ function AppSettingsPage() {
   }
 
   const openSegmentEditor = (templateId) => {
-    if (pricingTemplateLocked) {
-      return
-    }
     const target = pricingTemplates.find((item) => item.id === templateId)
     if (!target) {
       return
@@ -704,6 +825,7 @@ function AppSettingsPage() {
           minMinutes: nextMin,
           maxMinutes: nextMin + 15,
           billableHours: 0,
+          amount: null,
         },
       ]
     })
@@ -959,117 +1081,178 @@ function AppSettingsPage() {
           bordered={false}
         >
           <div className="settings-side-head">
-            <Typography.Title level={5}>计费模板（暂时关闭）</Typography.Title>
+            <Typography.Title level={5}>接单方案</Typography.Title>
             <Typography.Paragraph type="secondary">
-              这一块先临时封闭，当前版本请直接在接单页或补录页里选三种计费模式来用：分钟制、15分钟制、按把计费。
+              这里只管钱怎么算。保留三种默认计费方式，也可以新增自定义阶梯，按时间段设置计费小时或固定结算金额。
             </Typography.Paragraph>
-            <Typography.Text type="warning">
-              你现在看到的是只读内容，后续恢复开发后再开放编辑。
-            </Typography.Text>
           </div>
 
-          <div className="template-rows-list">
-            {pricingTemplates.map((tpl, idx) => (
-              <div key={tpl.id} className="template-row-item">
-                <span className="template-row-index">{idx + 1}</span>
-                <Input
-                  value={tpl.name}
-                  size="small"
-                  style={{ width: 150 }}
-                  disabled={pricingTemplateLocked}
-                  onChange={(e) =>
-                    handleTemplateFieldChange(idx, 'name', e.target.value)
-                  }
-                  placeholder="模板名"
-                />
-                <Select
-                  size="small"
-                  value={tpl.billingRule}
-                  options={BILLING_RULE_OPTIONS}
-                  disabled={pricingTemplateLocked}
-                  onChange={(value) =>
-                    handleTemplateFieldChange(idx, 'billingRule', value)
-                  }
-                  style={{ width: 138 }}
-                  popupMatchSelectWidth={260}
-                />
-                {tpl.billingRule === 'customSegment' ? (
-                  <Button
-                    size="small"
-                    disabled={pricingTemplateLocked}
-                    onClick={() => openSegmentEditor(tpl.id)}
-                  >
-                    分段规则
-                  </Button>
-                ) : null}
-                <Select
-                  size="small"
-                  value={tpl.commissionMode}
-                  options={COMMISSION_MODE_OPTIONS}
-                  disabled={pricingTemplateLocked}
-                  onChange={(value) =>
-                    handleTemplateFieldChange(idx, 'commissionMode', value)
-                  }
-                  style={{ width: 138 }}
-                  popupMatchSelectWidth={260}
-                />
-                <InputNumber
-                  size="small"
-                  min={0}
-                  step={tpl.commissionMode === 'fixed' ? 1 : 5}
-                  value={tpl.commissionValue}
-                  disabled={pricingTemplateLocked}
-                  onChange={(value) =>
-                    handleTemplateFieldChange(
-                      idx,
-                      'commissionValue',
-                      Number(value || 0),
-                    )
-                  }
-                  style={{ width: 104 }}
-                  addonAfter={tpl.commissionMode === 'fixed' ? '元/时' : '%'}
-                />
-                <Button
-                  type={pricingTemplateId === tpl.id ? 'primary' : 'default'}
-                  size="small"
-                  disabled={pricingTemplateLocked}
+          <div className="settings-scheme-workbench">
+            <div className="settings-scheme-list" aria-label="计费方案列表">
+              {pricingTemplates.map((tpl) => (
+                <button
+                  key={tpl.id}
+                  type="button"
+                  className={`settings-scheme-item ${
+                    pricingTemplateId === tpl.id ? 'is-active' : ''
+                  }`}
                   onClick={() => setPricingTemplateId(tpl.id)}
                 >
-                  设为默认
-                </Button>
-                <Button
-                  type="text"
-                  danger
-                  size="small"
-                  icon={<DeleteOutlined />}
-                  disabled={
-                    pricingTemplateLocked ||
-                    tpl.builtIn ||
-                    pricingTemplates.length <= 1
-                  }
-                  onClick={() => removePricingTemplate(tpl.id)}
-                />
-              </div>
-            ))}
-          </div>
+                  <span className="settings-scheme-item-title">{tpl.name}</span>
+                  <span className="settings-scheme-item-meta">
+                    {BILLING_RULE_OPTIONS.find(
+                      (item) => item.value === tpl.billingRule,
+                    )?.label || '计费规则'}
+                    {' · '}
+                    {tpl.commissionMode === 'fixed'
+                      ? `抽成 ${Number(tpl.commissionValue || 0)}元/时`
+                      : `抽成 ${Number(tpl.commissionValue || 0)}%`}
+                  </span>
+                </button>
+              ))}
+              <Button
+                type="dashed"
+                block
+                icon={<PlusOutlined />}
+                onClick={addPricingTemplate}
+              >
+                新增计费方案
+              </Button>
+            </div>
 
-          <Button
-            type="dashed"
-            block
-            icon={<PlusOutlined />}
-            disabled={pricingTemplateLocked}
-            onClick={addPricingTemplate}
-            style={{ marginTop: 8 }}
-          >
-            新增计费模板
-          </Button>
+            {selectedTemplate ? (
+              <div className="settings-scheme-editor">
+                <div className="settings-editor-head">
+                  <div>
+                    <Typography.Text type="secondary">
+                      当前计费方案
+                    </Typography.Text>
+                    <Typography.Title level={5}>
+                      {selectedTemplate.name}
+                    </Typography.Title>
+                  </div>
+                  <Space size={8}>
+                    <Button
+                      type={pricingTemplateId === selectedTemplate.id ? 'primary' : 'default'}
+                      onClick={() => setPricingTemplateId(selectedTemplate.id)}
+                    >
+                      默认使用
+                    </Button>
+                    <Button
+                      danger
+                      icon={<DeleteOutlined />}
+                      disabled={
+                        selectedTemplate.builtIn || pricingTemplates.length <= 1
+                      }
+                      onClick={() => removePricingTemplate(selectedTemplate.id)}
+                    />
+                  </Space>
+                </div>
+
+                <div className="settings-editor-grid">
+                  <label className="settings-field-block">
+                    <span>方案名称</span>
+                    <Input
+                      value={selectedTemplate.name}
+                      onChange={(e) =>
+                        handleTemplateFieldChange(
+                          selectedTemplateIndex,
+                          'name',
+                          e.target.value,
+                        )
+                      }
+                      placeholder="例如：A群15分钟制"
+                    />
+                  </label>
+                  <label className="settings-field-block">
+                    <span>计费方式</span>
+                    <Select
+                      value={selectedTemplate.billingRule}
+                      options={BILLING_RULE_OPTIONS}
+                      onChange={(value) =>
+                        handleTemplateFieldChange(
+                          selectedTemplateIndex,
+                          'billingRule',
+                          value,
+                        )
+                      }
+                      popupMatchSelectWidth={260}
+                    />
+                  </label>
+                  <label className="settings-field-block">
+                    <span>抽成方式</span>
+                    <Select
+                      value={selectedTemplate.commissionMode}
+                      options={COMMISSION_MODE_OPTIONS}
+                      onChange={(value) =>
+                        handleTemplateFieldChange(
+                          selectedTemplateIndex,
+                          'commissionMode',
+                          value,
+                        )
+                      }
+                      popupMatchSelectWidth={260}
+                    />
+                  </label>
+                  <label className="settings-field-block">
+                    <span>
+                      {selectedTemplate.commissionMode === 'fixed'
+                        ? '每小时抽成'
+                        : '抽成比例'}
+                    </span>
+                    <InputNumber
+                      min={0}
+                      step={selectedTemplate.commissionMode === 'fixed' ? 1 : 5}
+                      value={selectedTemplate.commissionValue}
+                      onChange={(value) =>
+                        handleTemplateFieldChange(
+                          selectedTemplateIndex,
+                          'commissionValue',
+                          Number(value || 0),
+                        )
+                      }
+                      addonAfter={
+                        selectedTemplate.commissionMode === 'fixed'
+                          ? '元/时'
+                          : '%'
+                      }
+                      style={{ width: '100%' }}
+                    />
+                  </label>
+                </div>
+
+                {selectedTemplate.billingRule === 'customSegment' ? (
+                  <div className="settings-segment-summary">
+                    <div>
+                      <Typography.Text strong>自定义阶梯</Typography.Text>
+                      <Typography.Paragraph type="secondary">
+                        当前共 {selectedTemplate.billingSegments?.length || 0}
+                        个时间段，可按计费小时或固定金额结算。
+                      </Typography.Paragraph>
+                    </div>
+                    <Button onClick={() => openSegmentEditor(selectedTemplate.id)}>
+                      编辑阶梯
+                    </Button>
+                  </div>
+                ) : (
+                  <div className="settings-rule-summary">
+                    {selectedTemplate.billingRule === 'minute'
+                      ? '分钟制：按实际分钟折算小时，适合不需要抹零的群。'
+                      : selectedTemplate.billingRule === 'tiered15'
+                        ? '15分钟制：未满15分钟默认不计费，之后按阶梯进位。'
+                        : '按把计费：按把价和把数结算，适合一把一结。'}
+                  </div>
+                )}
+              </div>
+            ) : null}
+          </div>
         </Card>
       </div>
 
       <Drawer
         title="报单模板配置"
         placement="right"
-        width={640}
+        width={1080}
         open={reportTemplateVisible}
         onClose={() => {
           setReportTemplateVisible(false)
@@ -1090,171 +1273,202 @@ function AppSettingsPage() {
             </Typography.Paragraph>
           </div>
 
-          <div className="template-paste-section">
-            <Typography.Text strong>粘贴文字模板</Typography.Text>
-            <TextArea
-              rows={5}
-              value={templatePasteText}
-              onChange={(e) => setTemplatePasteText(e.target.value)}
-              placeholder={
-                '示例：\n老板：{{老板}}\n接单群：{{接单群}}\n备注：(待填写)\n结算状态：未结算'
-              }
-            />
-            <Space size={8} wrap>
-              <Button type="primary" onClick={handleApplyPastedTemplate}>
-                过滤并应用字段
-              </Button>
+          <div className="settings-report-workbench">
+            <div className="settings-report-list">
+              {reportTemplates.map((item) => (
+                <button
+                  key={item.id}
+                  type="button"
+                  className={`settings-scheme-item ${
+                    item.id === reportTemplateId ? 'is-active' : ''
+                  }`}
+                  onClick={() => setReportTemplateId(item.id)}
+                >
+                  <span className="settings-scheme-item-title">
+                    {item.name}
+                  </span>
+                  <span className="settings-scheme-item-meta">
+                    {item.rows?.length || 0} 个字段
+                    {item.builtIn ? ' · 默认' : ''}
+                  </span>
+                </button>
+              ))}
               <Button
-                onClick={() => {
-                  setTemplatePasteText('')
-                  setTemplateParseResult(null)
-                }}
+                type="dashed"
+                block
+                icon={<PlusOutlined />}
+                onClick={addReportTemplate}
               >
-                清空粘贴区
+                新增报单模板
               </Button>
-              <Typography.Text type="secondary">
-                会自动过滤空行、无效字段名、重复字段，并保留可识别文本字段。
-              </Typography.Text>
-            </Space>
+            </div>
 
-            {templateParseResult ? (
-              <div className="template-parse-result">
-                <Typography.Text strong>
-                  字段核对结果：识别 {templateParseResult.importedLabels.length}
-                  项，忽略 {templateParseResult.ignored.length} 项
-                </Typography.Text>
-                {templateParseResult.importedLabels.length > 0 ? (
-                  <div className="template-parse-tags">
-                    {templateParseResult.importedLabels.map((label) => (
-                      <Tag key={label} color="blue">
-                        {label}
-                      </Tag>
-                    ))}
+            <div className="settings-report-editor">
+              <div className="settings-editor-head">
+                <div>
+                  <Typography.Text type="secondary">
+                    当前报单模板
+                  </Typography.Text>
+                  <Input
+                    value={selectedReportTemplate?.name || ''}
+                    onChange={(event) =>
+                      renameReportTemplate(event.target.value)
+                    }
+                    className="settings-title-input"
+                    placeholder="模板名称"
+                  />
+                </div>
+                <Button
+                  danger
+                  icon={<DeleteOutlined />}
+                  disabled={
+                    selectedReportTemplate?.builtIn ||
+                    reportTemplates.length <= 1
+                  }
+                  onClick={() => removeReportTemplate(reportTemplateId)}
+                />
+              </div>
+
+              <div className="settings-template-import">
+                <TextArea
+                  rows={4}
+                  value={templatePasteText}
+                  onChange={(e) => setTemplatePasteText(e.target.value)}
+                  placeholder={
+                    '可直接粘贴群里的报单格式，例如：\n老板：{{老板}}\n类型：{{类型}}\n到手：{{到手}}'
+                  }
+                />
+                <Space size={8} wrap>
+                  <Button type="primary" onClick={handleApplyPastedTemplate}>
+                    从粘贴内容生成字段
+                  </Button>
+                  <Button
+                    onClick={() => {
+                      setTemplatePasteText('')
+                      setTemplateParseResult(null)
+                    }}
+                  >
+                    清空
+                  </Button>
+                </Space>
+                {templateParseResult ? (
+                  <div className="template-parse-result">
+                    <Typography.Text strong>
+                      识别 {templateParseResult.importedLabels.length} 项，忽略{' '}
+                      {templateParseResult.ignored.length} 项
+                    </Typography.Text>
+                    {templateParseResult.importedLabels.length > 0 ? (
+                      <div className="template-parse-tags">
+                        {templateParseResult.importedLabels.map((label) => (
+                          <Tag key={label} color="blue">
+                            {label}
+                          </Tag>
+                        ))}
+                      </div>
+                    ) : null}
                   </div>
                 ) : null}
-                {templateParseResult.ignored.length > 0 ? (
-                  <div className="template-parse-ignored">
-                    {templateParseResult.ignored.map((item, index) => (
-                      <Typography.Text type="warning" key={`${item}-${index}`}>
-                        {item}
-                      </Typography.Text>
-                    ))}
+              </div>
+
+              <div className="settings-field-list">
+                {templateRows.map((row, idx) => (
+                  <div key={idx} className="settings-field-row">
+                    <span className="template-row-index">{idx + 1}</span>
+                    <Input
+                      value={row.label}
+                      onChange={(e) => {
+                        const next = [...templateRows]
+                        next[idx] = { ...next[idx], label: e.target.value }
+                        updateSelectedTemplateRows(next)
+                      }}
+                      placeholder="字段名"
+                      size="small"
+                    />
+                    <Tag
+                      color={AUTO_VARIABLES[row.label] ? 'blue' : undefined}
+                      style={{ margin: 0, flexShrink: 0 }}
+                    >
+                      {AUTO_VARIABLES[row.label] ? '自动' : '手填'}
+                    </Tag>
+                    <Input
+                      value={row.defaultValue}
+                      onChange={(e) => {
+                        const next = [...templateRows]
+                        next[idx] = {
+                          ...next[idx],
+                          defaultValue: e.target.value,
+                        }
+                        updateSelectedTemplateRows(next)
+                      }}
+                      placeholder={
+                        AUTO_VARIABLES[row.label]
+                          ? '自动为空时使用'
+                          : '默认内容'
+                      }
+                      size="small"
+                    />
+                    <Tooltip title={row.required ? '必填' : '选填'}>
+                      <Switch
+                        checked={row.required}
+                        onChange={(checked) => {
+                          const next = [...templateRows]
+                          next[idx] = { ...next[idx], required: checked }
+                          updateSelectedTemplateRows(next)
+                        }}
+                        checkedChildren="必填"
+                        unCheckedChildren="选填"
+                        size="small"
+                      />
+                    </Tooltip>
+                    <Button
+                      type="text"
+                      danger
+                      size="small"
+                      icon={<DeleteOutlined />}
+                      onClick={() => {
+                        updateSelectedTemplateRows((prev) =>
+                          prev.filter((_, i) => i !== idx),
+                        )
+                      }}
+                    />
                   </div>
-                ) : (
-                  <Typography.Text type="success">
-                    未发现异常字段，全部已通过核对。
-                  </Typography.Text>
-                )}
-              </div>
-            ) : null}
-          </div>
-
-          <div className="template-rows-list">
-            {templateRows.map((row, idx) => (
-              <div key={idx} className="template-row-item">
-                <span className="template-row-index">{idx + 1}</span>
-                <Input
-                  value={row.label}
-                  onChange={(e) => {
-                    const next = [...templateRows]
-                    next[idx] = { ...next[idx], label: e.target.value }
-                    setTemplateRows(next)
-                  }}
-                  placeholder="填什么"
-                  style={{ width: 90 }}
-                  size="small"
-                />
-                {AUTO_VARIABLES[row.label] ? (
-                  <Tag color="blue" style={{ margin: 0, flexShrink: 0 }}>
-                    自动
-                  </Tag>
-                ) : (
-                  <Tag style={{ margin: 0, flexShrink: 0 }}>手填</Tag>
-                )}
-                <Input
-                  value={row.defaultValue}
-                  onChange={(e) => {
-                    const next = [...templateRows]
-                    next[idx] = { ...next[idx], defaultValue: e.target.value }
-                    setTemplateRows(next)
-                  }}
-                  placeholder={
-                    AUTO_VARIABLES[row.label]
-                      ? '自动没拿到时用这个顶上'
-                      : '默认填这个'
-                  }
-                  size="small"
-                  style={{ flex: 1, minWidth: 60 }}
-                />
-                <Tooltip title={row.required ? '必填' : '选填'}>
-                  <Switch
-                    checked={row.required}
-                    onChange={(checked) => {
-                      const next = [...templateRows]
-                      next[idx] = { ...next[idx], required: checked }
-                      setTemplateRows(next)
-                    }}
-                    checkedChildren="必填"
-                    unCheckedChildren="选填"
-                    size="small"
-                  />
-                </Tooltip>
+                ))}
                 <Button
-                  type="text"
-                  danger
-                  size="small"
-                  icon={<DeleteOutlined />}
+                  type="dashed"
+                  block
+                  icon={<PlusOutlined />}
                   onClick={() => {
-                    setTemplateRows((prev) => prev.filter((_, i) => i !== idx))
+                    updateSelectedTemplateRows((prev) => [
+                      ...prev,
+                      {
+                        label: '',
+                        source: 'auto',
+                        defaultValue: '',
+                        required: false,
+                      },
+                    ])
                   }}
-                />
+                >
+                  加一项字段
+                </Button>
               </div>
-            ))}
+            </div>
+
+            <div className="settings-report-preview">
+              <Typography.Text strong>实时预览</Typography.Text>
+              <pre className="template-preview-box">
+                {templateRows
+                  .map(
+                    (r) =>
+                      `${r.label || '未命名'}：${AUTO_VARIABLES[r.label] ? `【${AUTO_VARIABLES[r.label]}】` : r.defaultValue || '(待填写)'}`,
+                  )
+                  .join('\n')}
+              </pre>
+              <Typography.Text type="secondary">
+                自动字段：{Object.keys(AUTO_VARIABLES).join('、')}
+              </Typography.Text>
+            </div>
           </div>
-
-          <Button
-            type="dashed"
-            block
-            icon={<PlusOutlined />}
-            onClick={() => {
-              setTemplateRows((prev) => [
-                ...prev,
-                {
-                  label: '',
-                  source: 'auto',
-                  defaultValue: '',
-                  required: false,
-                },
-              ])
-            }}
-            style={{ marginTop: 8 }}
-          >
-            加一项
-          </Button>
-
-          <div className="template-preview-section">
-            <Typography.Text
-              strong
-              style={{ display: 'block', marginBottom: 4 }}
-            >
-              报单长这样
-            </Typography.Text>
-            <pre className="template-preview-box">
-              {templateRows
-                .map(
-                  (r) =>
-                    `${r.label}：${AUTO_VARIABLES[r.label] ? `【${AUTO_VARIABLES[r.label]}】` : r.defaultValue || '(待填写)'}`,
-                )
-                .join('\n')}
-            </pre>
-          </div>
-
-          <Typography.Text
-            type="secondary"
-            style={{ display: 'block', marginTop: 8 }}
-          >
-            这些内容会自动帮你填好：{Object.keys(AUTO_VARIABLES).join('、')}
-          </Typography.Text>
         </div>
       </Drawer>
 
@@ -1265,14 +1479,15 @@ function AppSettingsPage() {
         onOk={saveSegmentEditor}
         okText="保存分段规则"
         cancelText="取消"
-        width={760}
+        width="fit-content"
+        className="segment-rule-modal"
       >
         <Typography.Paragraph type="secondary" style={{ marginBottom: 10 }}>
-          示例：10-15分钟记0.25小时，16-30分钟记0.5小时。最后一段可将“最大分钟”留空表示不限上限。
+          示例：10-15分钟记0.25小时，16-30分钟记0.5小时；如果某段填了固定金额，会直接按该金额结算，优先于单价和计费小时。
         </Typography.Paragraph>
-        <div className="template-rows-list" style={{ maxHeight: 360 }}>
+        <div className="segment-rule-list">
           {segmentRows.map((item, index) => (
-            <div className="template-row-item" key={item.id || index}>
+            <div className="segment-rule-row" key={item.id || index}>
               <span className="template-row-index">{index + 1}</span>
               <InputNumber
                 size="small"
@@ -1314,6 +1529,23 @@ function AppSettingsPage() {
                 }
                 style={{ width: 130 }}
                 addonAfter="计费小时"
+              />
+              <InputNumber
+                size="small"
+                min={0}
+                step={1}
+                value={item.amount}
+                onChange={(value) =>
+                  updateSegmentRow(index, {
+                    amount:
+                      value === null || value === undefined || value === ''
+                        ? null
+                        : Math.max(0, Number(value || 0)),
+                  })
+                }
+                style={{ width: 130 }}
+                placeholder="可不填"
+                addonAfter="固定金额"
               />
               <Button
                 type="text"

@@ -1,3 +1,23 @@
+export const DEFAULT_REPORT_TEMPLATE_ID = 'rpt-default'
+export const DEFAULT_REPORT_TEMPLATES = [
+  {
+    id: DEFAULT_REPORT_TEMPLATE_ID,
+    name: '默认报单模板',
+    builtIn: true,
+    rows: [
+      { label: '日期', source: 'auto', defaultValue: '', required: true },
+      { label: '老板', source: 'auto', defaultValue: '', required: true },
+      { label: '类型', source: 'auto', defaultValue: '', required: false },
+      { label: '起止时间', source: 'auto', defaultValue: '', required: true },
+      { label: '时长', source: 'auto', defaultValue: '', required: true },
+      { label: '单价', source: 'auto', defaultValue: '', required: true },
+      { label: '总计', source: 'auto', defaultValue: '', required: true },
+      { label: '抽成', source: 'auto', defaultValue: '', required: true },
+      { label: '到手', source: 'auto', defaultValue: '', required: true },
+    ],
+  },
+]
+
 export const DEFAULT_PRICING_CONFIG = {
   billingRule: 'tiered15',
   commissionMode: 'percentage',
@@ -34,6 +54,8 @@ export const DEFAULT_PRICING_CONFIG = {
   unsettledReminderDays: 1,
   unsettledReminderMode: 'naturalDay',
   unsettledReminderMinOrders: 1,
+  reportTemplateId: 'rpt-default',
+  reportTemplates: DEFAULT_REPORT_TEMPLATES,
 }
 
 export const TIERED15_MINIMUM_MINUTES = 15
@@ -43,12 +65,14 @@ export const DEFAULT_CUSTOM_BILLING_SEGMENTS = [
     minMinutes: 10,
     maxMinutes: 15,
     billableHours: 0.25,
+    amount: null,
   },
   {
     id: 'seg-2',
     minMinutes: 16,
     maxMinutes: 30,
     billableHours: 0.5,
+    amount: null,
   },
 ]
 
@@ -56,6 +80,7 @@ export const BILLING_RULE_OPTIONS = [
   { value: 'minute', label: '分钟制' },
   { value: 'tiered15', label: '15分钟制' },
   { value: 'perGame', label: '按把计费' },
+  { value: 'customSegment', label: '自定义阶梯' },
 ]
 
 export const COMMISSION_MODE_OPTIONS = [
@@ -110,6 +135,11 @@ function normalizeBillingSegment(segment = {}, fallback = {}, index = 0) {
       toNumber(segment.billableHours, fallback.billableHours || 0) * 1000,
     ) / 1000,
   )
+  const rawAmount = segment.amount ?? fallback.amount ?? null
+  const amount =
+    rawAmount === null || rawAmount === undefined || rawAmount === ''
+      ? null
+      : Math.max(0, Math.round(toNumber(rawAmount, 0) * 100) / 100)
 
   const id =
     typeof segment.id === 'string' && segment.id.trim()
@@ -123,6 +153,7 @@ function normalizeBillingSegment(segment = {}, fallback = {}, index = 0) {
     minMinutes,
     maxMinutes,
     billableHours,
+    amount,
   }
 }
 
@@ -169,6 +200,13 @@ export function normalizePricingConfig(
     config.pricingTemplates,
     fallbackTemplates,
   )
+  const fallbackReportTemplates = Array.isArray(fallback.reportTemplates)
+    ? fallback.reportTemplates
+    : DEFAULT_REPORT_TEMPLATES
+  const normalizedReportTemplates = normalizeReportTemplates(
+    config.reportTemplates,
+    fallbackReportTemplates,
+  )
   const fallbackTemplateId =
     fallback.pricingTemplateId || normalizedTemplates[0]?.id || ''
   const pricingTemplateId = normalizePricingTemplateId(
@@ -180,6 +218,11 @@ export function normalizePricingConfig(
     normalizedTemplates.find((item) => item.id === pricingTemplateId) ||
     normalizedTemplates[0] ||
     null
+  const reportTemplateId = normalizeReportTemplateId(
+    config.reportTemplateId,
+    normalizedReportTemplates,
+    fallback.reportTemplateId || DEFAULT_REPORT_TEMPLATE_ID,
+  )
 
   const normalizedBillingRule = normalizeBillingRule(
     config.billingRule,
@@ -206,6 +249,8 @@ export function normalizePricingConfig(
     ),
     pricingTemplateId,
     pricingTemplates: normalizedTemplates,
+    reportTemplateId,
+    reportTemplates: normalizedReportTemplates,
     showDailyEncouragement:
       typeof config.showDailyEncouragement === 'boolean'
         ? config.showDailyEncouragement
@@ -249,6 +294,12 @@ function normalizePricingTemplate(template = {}, fallbackTemplate = {}) {
   return {
     id,
     name,
+    groupName:
+      typeof template.groupName === 'string'
+        ? template.groupName.trim()
+        : typeof fallbackTemplate.groupName === 'string'
+          ? fallbackTemplate.groupName.trim()
+          : '',
     billingRule: normalizeBillingRule(
       template.billingRule,
       normalizeBillingRule(
@@ -275,8 +326,123 @@ function normalizePricingTemplate(template = {}, fallbackTemplate = {}) {
       template.billingSegments,
       fallbackTemplate.billingSegments || DEFAULT_CUSTOM_BILLING_SEGMENTS,
     ),
+    reportRows: Array.isArray(template.reportRows)
+      ? normalizeReportRows(template.reportRows)
+      : Array.isArray(fallbackTemplate.reportRows)
+        ? normalizeReportRows(fallbackTemplate.reportRows)
+        : null,
     builtIn: Boolean(template.builtIn || fallbackTemplate.builtIn),
   }
+}
+
+export function normalizeReportRows(rows = []) {
+  if (!Array.isArray(rows)) {
+    return []
+  }
+
+  return rows
+    .map((row) => ({
+      label: String(row?.label || '').trim(),
+      source: row?.source === 'manual' || row?.source === 'custom' ? 'manual' : 'auto',
+      defaultValue: String(row?.defaultValue || ''),
+      required: Boolean(row?.required),
+    }))
+    .filter((row) => row.label)
+}
+
+function normalizeReportTemplate(template = {}, fallbackTemplate = {}) {
+  const fallbackId =
+    typeof fallbackTemplate.id === 'string' ? fallbackTemplate.id : ''
+  const id =
+    typeof template.id === 'string' && template.id.trim()
+      ? template.id.trim()
+      : fallbackId || `rpt-${Date.now()}-${Math.floor(Math.random() * 1000)}`
+  const name =
+    typeof template.name === 'string' && template.name.trim()
+      ? template.name.trim()
+      : typeof fallbackTemplate.name === 'string' &&
+          fallbackTemplate.name.trim()
+        ? fallbackTemplate.name.trim()
+        : '自定义报单模板'
+  const rows = normalizeReportRows(
+    Array.isArray(template.rows)
+      ? template.rows
+      : Array.isArray(fallbackTemplate.rows)
+        ? fallbackTemplate.rows
+        : DEFAULT_REPORT_TEMPLATES[0].rows,
+  )
+
+  return {
+    id,
+    name,
+    rows: rows.length > 0 ? rows : normalizeReportRows(DEFAULT_REPORT_TEMPLATES[0].rows),
+    builtIn: Boolean(template.builtIn || fallbackTemplate.builtIn),
+  }
+}
+
+export function normalizeReportTemplates(
+  templates,
+  fallbackTemplates = DEFAULT_REPORT_TEMPLATES,
+) {
+  const source =
+    Array.isArray(templates) && templates.length > 0
+      ? templates
+      : fallbackTemplates
+  const normalized = source
+    .map((item, index) =>
+      normalizeReportTemplate(item, fallbackTemplates[index] || {}),
+    )
+    .filter((item) => item.id)
+
+  if (normalized.length === 0) {
+    return DEFAULT_REPORT_TEMPLATES.map((item) => ({
+      ...item,
+      rows: item.rows.map((row) => ({ ...row })),
+    }))
+  }
+
+  const used = new Set()
+  return normalized.map((item, index) => {
+    let nextId = item.id
+    if (used.has(nextId)) {
+      nextId = `${nextId}-${index + 1}`
+    }
+    used.add(nextId)
+    return { ...item, id: nextId }
+  })
+}
+
+export function normalizeReportTemplateId(
+  value,
+  templates,
+  fallbackId = DEFAULT_REPORT_TEMPLATE_ID,
+) {
+  const ids = new Set((templates || []).map((item) => item.id))
+  if (typeof value === 'string' && ids.has(value)) {
+    return value
+  }
+  if (typeof fallbackId === 'string' && ids.has(fallbackId)) {
+    return fallbackId
+  }
+  return (templates || [])[0]?.id || DEFAULT_REPORT_TEMPLATE_ID
+}
+
+export function getReportTemplateById(
+  pricingConfig,
+  templateId,
+  fallback = DEFAULT_PRICING_CONFIG,
+) {
+  const config = normalizePricingConfig(pricingConfig || {}, fallback)
+  const targetId = normalizeReportTemplateId(
+    templateId,
+    config.reportTemplates,
+    config.reportTemplateId,
+  )
+  return (
+    config.reportTemplates.find((item) => item.id === targetId) ||
+    config.reportTemplates[0] ||
+    null
+  )
 }
 
 export function normalizePricingTemplates(
@@ -500,6 +666,19 @@ function getBillableMinutesBySegments(totalMinutes, billingSegments = []) {
   return Math.max(0, Number(matched.billableHours || 0) * 60)
 }
 
+function getMatchedBillingSegment(totalMinutes, billingSegments = []) {
+  const segments = normalizeBillingSegments(billingSegments)
+  return (
+    segments.find((segment) => {
+      const minPass = totalMinutes >= segment.minMinutes
+      const maxPass =
+        segment.maxMinutes === null ||
+        totalMinutes <= Number(segment.maxMinutes)
+      return minPass && maxPass
+    }) || null
+  )
+}
+
 export function getBillableMinutes(
   totalSeconds,
   billingRule = 'minute',
@@ -565,6 +744,16 @@ export function getGrossAmount(
     return roundCurrency(
       Number(order.gamePrice || 0) * Math.max(0, Number(order.gameCount || 0)),
     )
+  }
+
+  if (pricing.billingRule === 'customSegment') {
+    const matched = getMatchedBillingSegment(
+      Math.max(0, Number(totalSeconds || 0)) / 60,
+      pricing.billingSegments,
+    )
+    if (matched && matched.amount !== null && matched.amount !== undefined) {
+      return roundCurrency(matched.amount)
+    }
   }
 
   const billableHours = getBillableHours(

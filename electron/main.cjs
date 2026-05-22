@@ -25,6 +25,29 @@ const DEFAULT_BILLING_RULE = 'tiered15'
 const DEFAULT_COMMISSION_MODE = 'percentage'
 const DEFAULT_COMMISSION_VALUE = 10
 const DEFAULT_PRICING_TEMPLATE_ID = 'tpl-tiered15-10p'
+const DEFAULT_CUSTOM_BILLING_SEGMENTS = [
+  { id: 'seg-1', minMinutes: 10, maxMinutes: 15, billableHours: 0.25, amount: null },
+  { id: 'seg-2', minMinutes: 16, maxMinutes: 30, billableHours: 0.5, amount: null },
+]
+const DEFAULT_REPORT_TEMPLATE_ID = 'rpt-default'
+const DEFAULT_REPORT_TEMPLATES = [
+  {
+    id: DEFAULT_REPORT_TEMPLATE_ID,
+    name: '默认报单模板',
+    builtIn: true,
+    rows: [
+      { label: '日期', source: 'auto', defaultValue: '', required: true },
+      { label: '老板', source: 'auto', defaultValue: '', required: true },
+      { label: '类型', source: 'auto', defaultValue: '', required: false },
+      { label: '起止时间', source: 'auto', defaultValue: '', required: true },
+      { label: '时长', source: 'auto', defaultValue: '', required: true },
+      { label: '单价', source: 'auto', defaultValue: '', required: true },
+      { label: '总计', source: 'auto', defaultValue: '', required: true },
+      { label: '抽成', source: 'auto', defaultValue: '', required: true },
+      { label: '到手', source: 'auto', defaultValue: '', required: true },
+    ],
+  },
+]
 const DEFAULT_PRICING_TEMPLATES = [
   {
     id: 'tpl-tiered15-10p',
@@ -219,13 +242,66 @@ function readAppSettings() {
 }
 
 function normalizeBillingRule(value, fallback = DEFAULT_BILLING_RULE) {
-  return value === 'tiered15' || value === 'minute' || value === 'perGame'
+  return value === 'tiered15' ||
+    value === 'minute' ||
+    value === 'perGame' ||
+    value === 'customSegment'
     ? value
     : fallback
 }
 
 function normalizeCommissionMode(value, fallback = DEFAULT_COMMISSION_MODE) {
   return value === 'fixed' || value === 'percentage' ? value : fallback
+}
+
+function normalizeBillingSegment(segment = {}, fallback = {}, index = 0) {
+  const minMinutes = Math.max(
+    0,
+    Math.floor(Number(segment.minMinutes ?? fallback.minMinutes ?? 0) || 0),
+  )
+  const rawMax =
+    segment.maxMinutes ?? fallback.maxMinutes ?? null
+  const maxMinutes =
+    rawMax === null || rawMax === ''
+      ? null
+      : Math.max(minMinutes, Math.floor(Number(rawMax) || minMinutes))
+  const billableHours = Math.max(
+    0,
+    Math.round(Number(segment.billableHours ?? fallback.billableHours ?? 0) * 1000) /
+      1000,
+  )
+  const rawAmount = segment.amount ?? fallback.amount ?? null
+  const amount =
+    rawAmount === null || rawAmount === ''
+      ? null
+      : Math.max(0, Math.round((Number(rawAmount) || 0) * 100) / 100)
+
+  return {
+    id:
+      typeof segment.id === 'string' && segment.id.trim()
+        ? segment.id.trim()
+        : typeof fallback.id === 'string' && fallback.id.trim()
+          ? fallback.id.trim()
+          : `seg-${index + 1}`,
+    minMinutes,
+    maxMinutes,
+    billableHours,
+    amount,
+  }
+}
+
+function normalizeBillingSegments(
+  segments,
+  fallbackSegments = DEFAULT_CUSTOM_BILLING_SEGMENTS,
+) {
+  const source =
+    Array.isArray(segments) && segments.length > 0 ? segments : fallbackSegments
+
+  return source
+    .map((item, index) =>
+      normalizeBillingSegment(item, fallbackSegments[index] || {}, index),
+    )
+    .sort((a, b) => a.minMinutes - b.minMinutes)
 }
 
 function normalizeUnsettledReminderMode(value, fallback = 'naturalDay') {
@@ -267,6 +343,12 @@ function normalizePricingTemplate(template = {}, fallbackTemplate = {}) {
   return {
     id,
     name,
+    groupName:
+      typeof template.groupName === 'string'
+        ? template.groupName.trim()
+        : typeof fallbackTemplate.groupName === 'string'
+          ? fallbackTemplate.groupName.trim()
+          : '',
     billingRule: normalizeBillingRule(
       template.billingRule,
       normalizeBillingRule(fallbackTemplate.billingRule, DEFAULT_BILLING_RULE),
@@ -286,8 +368,109 @@ function normalizePricingTemplate(template = {}, fallbackTemplate = {}) {
           DEFAULT_COMMISSION_VALUE,
       ) || 0,
     ),
+    billingSegments: normalizeBillingSegments(
+      template.billingSegments,
+      fallbackTemplate.billingSegments || DEFAULT_CUSTOM_BILLING_SEGMENTS,
+    ),
+    reportRows: Array.isArray(template.reportRows)
+      ? normalizeReportRows(template.reportRows)
+      : Array.isArray(fallbackTemplate.reportRows)
+        ? normalizeReportRows(fallbackTemplate.reportRows)
+        : null,
     builtIn: Boolean(template.builtIn || fallbackTemplate.builtIn),
   }
+}
+
+function normalizeReportRows(rows = []) {
+  if (!Array.isArray(rows)) {
+    return []
+  }
+
+  return rows
+    .map((row) => ({
+      label: String(row?.label || '').trim(),
+      source:
+        row?.source === 'manual' || row?.source === 'custom'
+          ? 'manual'
+          : 'auto',
+      defaultValue: String(row?.defaultValue || ''),
+      required: Boolean(row?.required),
+    }))
+    .filter((row) => row.label)
+}
+
+function normalizeReportTemplate(template = {}, fallbackTemplate = {}) {
+  const fallbackId =
+    typeof fallbackTemplate.id === 'string' ? fallbackTemplate.id : ''
+  const id =
+    typeof template.id === 'string' && template.id.trim()
+      ? template.id.trim()
+      : fallbackId || DEFAULT_REPORT_TEMPLATE_ID
+  const name =
+    typeof template.name === 'string' && template.name.trim()
+      ? template.name.trim()
+      : typeof fallbackTemplate.name === 'string' &&
+          fallbackTemplate.name.trim()
+        ? fallbackTemplate.name.trim()
+        : '自定义报单模板'
+  const rows = normalizeReportRows(
+    Array.isArray(template.rows)
+      ? template.rows
+      : Array.isArray(fallbackTemplate.rows)
+        ? fallbackTemplate.rows
+        : DEFAULT_REPORT_TEMPLATES[0].rows,
+  )
+
+  return {
+    id,
+    name,
+    rows: rows.length > 0 ? rows : normalizeReportRows(DEFAULT_REPORT_TEMPLATES[0].rows),
+    builtIn: Boolean(template.builtIn || fallbackTemplate.builtIn),
+  }
+}
+
+function normalizeReportTemplates(
+  templates,
+  fallbackTemplates = DEFAULT_REPORT_TEMPLATES,
+) {
+  const source =
+    Array.isArray(templates) && templates.length > 0
+      ? templates
+      : fallbackTemplates
+  const normalized = source
+    .map((item, index) =>
+      normalizeReportTemplate(item, fallbackTemplates[index] || {}),
+    )
+    .filter((item) => item.id)
+
+  if (normalized.length === 0) {
+    return DEFAULT_REPORT_TEMPLATES.map((item) => ({ ...item }))
+  }
+
+  const used = new Set()
+  return normalized.map((item, index) => {
+    let nextId = item.id
+    if (used.has(nextId)) {
+      nextId = `${nextId}-${index + 1}`
+    }
+    used.add(nextId)
+    return { ...item, id: nextId }
+  })
+}
+
+function normalizeReportTemplateId(
+  value,
+  templates,
+  fallbackId = DEFAULT_REPORT_TEMPLATE_ID,
+) {
+  const ids = new Set((templates || []).map((item) => item.id))
+  if (typeof value === 'string' && ids.has(value)) {
+    return value
+  }
+  if (typeof fallbackId === 'string' && ids.has(fallbackId)) {
+    return fallbackId
+  }
+  return (templates || [])[0]?.id || DEFAULT_REPORT_TEMPLATE_ID
 }
 
 function normalizePricingTemplates(
@@ -346,6 +529,13 @@ function normalizePricingConfig(input = {}, fallback = {}) {
     input.pricingTemplates,
     fallbackTemplates,
   )
+  const fallbackReportTemplates = Array.isArray(fallback.reportTemplates)
+    ? fallback.reportTemplates
+    : DEFAULT_REPORT_TEMPLATES
+  const reportTemplates = normalizeReportTemplates(
+    input.reportTemplates,
+    fallbackReportTemplates,
+  )
   const fallbackTemplateId =
     fallback.pricingTemplateId ||
     pricingTemplates[0]?.id ||
@@ -359,6 +549,11 @@ function normalizePricingConfig(input = {}, fallback = {}) {
     pricingTemplates.find((item) => item.id === pricingTemplateId) ||
     pricingTemplates[0] ||
     null
+  const reportTemplateId = normalizeReportTemplateId(
+    input.reportTemplateId,
+    reportTemplates,
+    fallback.reportTemplateId || DEFAULT_REPORT_TEMPLATE_ID,
+  )
 
   return {
     billingRule: normalizeBillingRule(
@@ -387,8 +582,14 @@ function normalizePricingConfig(input = {}, fallback = {}) {
           DEFAULT_COMMISSION_VALUE,
       ) || 0,
     ),
+    billingSegments: normalizeBillingSegments(
+      input.billingSegments,
+      selectedTemplate?.billingSegments || DEFAULT_CUSTOM_BILLING_SEGMENTS,
+    ),
     pricingTemplateId,
     pricingTemplates,
+    reportTemplateId,
+    reportTemplates,
     showDailyEncouragement:
       typeof input.showDailyEncouragement === 'boolean'
         ? input.showDailyEncouragement

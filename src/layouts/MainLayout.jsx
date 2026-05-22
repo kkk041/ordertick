@@ -333,7 +333,7 @@ function MainLayout({ children, menuRouteGroups }) {
           </Button>
         </div>
         <Content className="app-content">
-          <div key={location.pathname} className={routeStageClassName}>
+          <div className={routeStageClassName}>
             {children}
           </div>
         </Content>

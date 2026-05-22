@@ -43,6 +43,7 @@ import {
   applyPricingTemplate,
   BILLING_RULE_OPTIONS,
   COMMISSION_MODE_OPTIONS,
+  getReportTemplateById,
   getBillingRuleLabel,
   getPricingTemplateById,
   getUnbilledThresholdMinutes,
@@ -52,6 +53,7 @@ import {
   getSettlementAmount,
   hasManualActualAmount,
   isOrderSettled,
+  normalizeBillingSegments,
   normalizeBillingRule,
   normalizeCommissionMode,
   normalizeSettlementStatus,
@@ -190,6 +192,7 @@ function normalizeImportedOrder(
     groupName: String(groupRaw || '').trim(),
     note: String(noteRaw || '').trim() || '未填写',
     pricingTemplateId: withTemplate.pricingTemplateId,
+    reportTemplateId: pricingConfig.reportTemplateId,
     billingRule: withTemplate.billingRule,
     billingSegments: withTemplate.billingSegments,
     commissionMode: withTemplate.commissionMode,
@@ -287,6 +290,30 @@ function HistoryOrdersPage() {
   const [detailOrder, setDetailOrder] = useState(null)
   const [editForm] = Form.useForm()
   const editBillingRule = Form.useWatch('billingRule', editForm)
+  const pricingTemplateOptions = useMemo(
+    () =>
+      (pricingConfig.pricingTemplates || []).map((tpl) => ({
+        value: tpl.id,
+        label: tpl.name,
+      })),
+    [pricingConfig.pricingTemplates],
+  )
+  const reportTemplateOptions = useMemo(
+    () =>
+      (pricingConfig.reportTemplates || []).map((tpl) => ({
+        value: tpl.id,
+        label: tpl.name,
+      })),
+    [pricingConfig.reportTemplates],
+  )
+  const getReportTemplateName = (templateId) => {
+    const template = getReportTemplateById(
+      pricingConfig,
+      templateId || pricingConfig.reportTemplateId,
+      pricingConfig,
+    )
+    return template?.name || '默认报单模板'
+  }
 
   const refresh = async () => {
     setLoading(true)
@@ -646,6 +673,7 @@ function HistoryOrdersPage() {
       endAtInput: toPickerValue(record.endAt),
       pricingTemplateId:
         record.pricingTemplateId || pricingConfig.pricingTemplateId,
+      reportTemplateId: record.reportTemplateId || pricingConfig.reportTemplateId,
       hourRate: Number(record.hourRate || 0),
       billingRule: normalizeBillingRule(record.billingRule, 'tiered15'),
       commissionMode: normalizeCommissionMode(
@@ -665,6 +693,23 @@ function HistoryOrdersPage() {
       gameCount: Number(record.gameCount || 1),
     })
     setEditOpen(true)
+  }
+
+  const applyEditPricingTemplate = (templateId) => {
+    const template = getPricingTemplateById(
+      pricingConfig,
+      templateId,
+      pricingConfig,
+    )
+    if (!template) {
+      return
+    }
+    editForm.setFieldsValue({
+      pricingTemplateId: template.id,
+      billingRule: template.billingRule,
+      commissionMode: template.commissionMode,
+      commissionValue: Number(template.commissionValue || 0),
+    })
   }
 
   const submitEditOrder = async () => {
@@ -687,7 +732,7 @@ function HistoryOrdersPage() {
       'tiered15',
     )
 
-    if (editBillingRuleVal !== 'perGame') {
+    if (editBillingRuleVal !== 'perGame' && editBillingRuleVal !== 'customSegment') {
       const hourRate = Number(values.hourRate)
       if (!Number.isFinite(hourRate) || hourRate <= 0) {
         message.warning('请填写有效的单价')
@@ -717,13 +762,16 @@ function HistoryOrdersPage() {
         boss: values.boss?.trim() || '',
         groupName: values.groupName?.trim() || '',
         hourRate:
-          editBillingRuleVal === 'perGame' ? 0 : Number(values.hourRate),
+          editBillingRuleVal === 'perGame'
+            ? 0
+            : Number(values.hourRate || 0),
         pricingTemplateId:
           values.pricingTemplateId || editPricingSnapshot.pricingTemplateId,
+        reportTemplateId: values.reportTemplateId || pricingConfig.reportTemplateId,
         billingRule: editBillingRuleVal || editPricingSnapshot.billingRule,
         billingSegments:
           editBillingRuleVal === 'customSegment'
-            ? editPricingSnapshot.billingSegments
+            ? normalizeBillingSegments(editPricingSnapshot.billingSegments)
             : [],
         commissionMode: normalizeCommissionMode(
           values.commissionMode || editPricingSnapshot.commissionMode,
@@ -763,7 +811,7 @@ function HistoryOrdersPage() {
       billingRule: editBillingRuleVal,
       billingSegments:
         editBillingRuleVal === 'customSegment'
-          ? editPricingSnapshot.billingSegments
+          ? normalizeBillingSegments(editPricingSnapshot.billingSegments)
           : [],
       actualAmount: normalizeOptionalActualAmount(values.actualAmount),
     })
@@ -887,6 +935,17 @@ function HistoryOrdersPage() {
       width: 108,
       responsive: ['md'],
       render: (value) => (value && value.trim() ? value : '未填写'),
+    },
+    {
+      title: '报单模板',
+      key: 'reportTemplate',
+      width: 116,
+      responsive: ['md'],
+      ellipsis: true,
+      render: (_, row) => {
+        const text = getReportTemplateName(row.reportTemplateId)
+        return <Tooltip title={text}>{text}</Tooltip>
+      },
     },
     {
       title: '单价',
@@ -1399,11 +1458,32 @@ function HistoryOrdersPage() {
             <Form.Item
               label="单价(元/小时)"
               name="hourRate"
-              rules={[{ required: true, message: '请填写单价' }]}
+              rules={
+                editBillingRule === 'customSegment'
+                  ? []
+                  : [{ required: true, message: '请填写单价' }]
+              }
             >
-              <InputNumber min={0.01} step={5} style={{ width: '100%' }} />
+              <InputNumber min={0} step={5} style={{ width: '100%' }} />
             </Form.Item>
           )}
+          <Form.Item
+            label="计费方案"
+            name="pricingTemplateId"
+            style={{ gridColumn: '1 / -1' }}
+          >
+            <Select
+              options={pricingTemplateOptions}
+              onChange={applyEditPricingTemplate}
+              popupMatchSelectWidth={320}
+            />
+          </Form.Item>
+          <Form.Item label="报单模板" name="reportTemplateId">
+            <Select
+              options={reportTemplateOptions}
+              popupMatchSelectWidth={320}
+            />
+          </Form.Item>
           <Form.Item label="计费规则" name="billingRule">
             <Select
               options={BILLING_RULE_OPTIONS}

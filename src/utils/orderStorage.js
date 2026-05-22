@@ -1,6 +1,8 @@
 import {
   DEFAULT_PRICING_CONFIG,
+  getReportTemplateById,
   normalizePricingConfig,
+  normalizeReportRows,
   normalizeSettlementStatus,
 } from './pricing'
 
@@ -158,7 +160,16 @@ export function generateReportText(_template, order, fields, pricingHelpers) {
   }
 
   // 基于结构化模板行生成报单
-  const rows = loadTemplateRows()
+  const pricingConfig = readLocalPricingConfig()
+  const reportTemplate = getReportTemplateById(
+    pricingConfig,
+    order.reportTemplateId || pricingConfig.reportTemplateId,
+  )
+  const schemeRows = reportTemplate?.rows || []
+  const rows =
+    Array.isArray(schemeRows) && schemeRows.length > 0
+      ? normalizeReportRows(schemeRows)
+      : loadTemplateRows()
   const lines = rows.map((row) => {
     // 优先使用自动变量值，其次 fields 传入值，最后 defaultValue
     const value =
@@ -206,6 +217,10 @@ function normalizeOrderRecord(order, options = {}) {
     pricingTemplateId:
       typeof order.pricingTemplateId === 'string'
         ? order.pricingTemplateId
+        : '',
+    reportTemplateId:
+      typeof order.reportTemplateId === 'string'
+        ? order.reportTemplateId
         : '',
     settlementStatus: normalizeSettlementStatus(
       order.settlementStatus,
